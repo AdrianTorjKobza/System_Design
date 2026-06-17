@@ -2,7 +2,7 @@
 
 ## 1. Architecture Overview
 
-This proposed solution is a cloud-agnostic, event-driven microservices architecture designed to detect and moderate forbidden advertisements (e.g. illegal goods, restricted content, scams) at scale. It utilizes a multimodal machine learning approach—analyzing text, image, and metadata—to score ads in near real-time. 
+This proposed solution is a cloud-agnostic, event-driven microservices architecture designed to detect and moderate forbidden advertisements (e.g. illegal goods, restricted content, scams) at scale. It utilizes a multimodal machine learning approach, analyzing text, image, and metadata—to score ads in near real-time. 
 
 To maintain high availability and accommodate traffic spikes without impacting the user experience, the system separates synchronous ingestion from heavy asynchronous ML inference via a message broker. Ads are processed by a stream processing engine that interacts with an online feature store for low-latency context retrieval. A moderation decision engine applies business rules and ML scores to automatically approve, reject, or route borderline cases to a human review portal. An offline MLOps pipeline continuously captures ground truth data from human reviewers to retrain and deploy updated models, mitigating adversarial adaptation and model drift over time.
 

@@ -77,14 +77,14 @@ graph TD
 * **High Availability:** All services, including the DB and message broker, are deployed across multiple availability zones (AZs) to survive infrastructure failures. The Scheduler Service utilizes a distributed lock or leader election to prevent duplicate scheduling.
 
 ### Performance Efficiency
-* **Horizontal Scalability:** The Worker Fleet automatically scales up and down based on the queue depth metric (e.g., using Kubernetes HPA or KEDA).
+* **Horizontal Scalability:** The Worker Fleet automatically scales up and down based on the queue depth metric (e.g. using Kubernetes HPA or KEDA).
 * **High-Throughput State Management:** An in-memory key-value store (Redis) is utilized for high-speed job state updates, preventing bottlenecks on the primary relational database.
 * **Asynchronous Processing:** Long-running jobs do not block client requests. The system operates asynchronously, returning a job ID immediately for subsequent status polling or webhook callbacks.
 
 ### Cost Optimization
 * **Elastic Compute:** By scaling worker nodes dynamically based on queue depth, compute resources are only consumed when there is an active backlog of jobs.
 * **Spot/Preemptible Instances:** For fault-tolerant, idempotent workloads, worker nodes can be provisioned on cheaper Spot or Preemptible instances, significantly reducing compute costs.
-* **Right-Sizing Storage:** Job metadata and logs are lifecycle-managed. Completed or failed job details are archived to cheaper object storage (e.g., S3-compatible storage) after a predefined retention period.
+* **Right-Sizing Storage:** Job metadata and logs are lifecycle-managed. Completed or failed job details are archived to cheaper object storage (e.g. S3-compatible storage) after a predefined retention period.
 
 ### Sustainability
 * **Scale-to-Zero:** In non-production environments or during periods of zero traffic, the worker fleet can scale down to zero to minimize idle power consumption and carbon footprint.
@@ -95,10 +95,10 @@ graph TD
 * **API Gateway:** A server that acts as an API front-end, receiving API requests, enforcing throttling and security policies, passing requests to the back-end service, and then passing the response back to the requester.
 * **Microservices Architecture:** An architectural style that structures an application as a collection of loosely coupled, independently deployable services.
 * **Message Broker:** An intermediary computer program module that translates a message from the formal messaging protocol of the sender to the formal messaging protocol of the receiver (e.g., Kafka, RabbitMQ).
-* **Metadata DB:** A database used to store data providing information about one or more aspects of the jobs (e.g., job owner, schedule time, payload, current status).
+* **Metadata DB:** A database used to store data providing information about one or more aspects of the jobs (e.g. job owner, schedule time, payload, current status).
 * **State Store:** A database, typically a fast, in-memory key-value store (like Redis), used to track the real-time execution state of jobs.
 * **Idempotency:** A property of operations in mathematics and computer science whereby an operation can be applied multiple times without changing the result beyond the initial application. Crucial for workers to safely retry failed jobs.
-* **Dead Letter Queue (DLQ):** A service implementation to store messages that meet one or more failure criteria (e.g., maximum retries exceeded) for later analysis.
+* **Dead Letter Queue (DLQ):** A service implementation to store messages that meet one or more failure criteria (e.g. maximum retries exceeded) for later analysis.
 * **JWT (JSON Web Token):** An open standard used to share security information between two parties securely.
 * **RBAC (Role-Based Access Control):** A method of restricting network access based on the roles of individual users within an enterprise.
 * **Horizontal Pod Autoscaler (HPA) / KEDA:** Kubernetes-native tools used to automatically scale the number of pods in a deployment based on observed metrics (like CPU utilization or queue length).

@@ -1,4 +1,4 @@
-# Application Performance Monitoring (APM) System Architecture
+# Application Performance Monitoring System Architecture
 
 ## 1. Architecture Overview
 

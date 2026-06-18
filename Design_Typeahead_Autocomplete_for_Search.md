@@ -1,3 +1,4 @@
+## Typeahead/Autocomplete Search System Architecture 
 # 1. Architecture Overview
 
 The proposed solution for a scalable, low-latency Typeahead/Autocomplete search system relies on a cloud-agnostic microservices architecture optimized for read-heavy workloads. To achieve sub-50ms response times, the system utilizes an in-memory data store (Redis) leveraging Trie data structures or Sorted Sets to serve prefix matches instantly. 

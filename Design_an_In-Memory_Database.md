@@ -8,48 +8,48 @@ The proposed solution is a cloud-agnostic, distributed in-memory database design
 
 ```mermaid
 flowchart TD
-    subgraph Client Layer
+    subgraph Client_Layer [Client Layer]
         C1[Client Application]
         C2[Microservice A]
         C3[Microservice B]
     end
 
-    subgraph Access & Routing
+    subgraph Access_Routing [Access & Routing]
         AGW[API Gateway / Load Balancer]
         PROXY[Proxy & Routing Layer\nConsistent Hashing]
     end
 
-    subgraph Cluster Management
-        CM[(Cluster Manager / Discovery)\netcd / Consul]
+    subgraph Cluster_Management [Cluster Management]
+        CM[(Cluster Manager\netcd / Consul)]
     end
 
-    subgraph Data Layer (In-Memory)
-        subgraph Shard 1
+    subgraph Data_Layer [Data Layer - In-Memory]
+        subgraph Shard_1 [Shard 1]
             P1[(Primary Node 1\nRAM)]
             S1[(Replica Node 1\nRAM)]
             P1 -. Async Sync .-> S1
         end
 
-        subgraph Shard 2
+        subgraph Shard_2 [Shard 2]
             P2[(Primary Node 2\nRAM)]
             S2[(Replica Node 2\nRAM)]
             P2 -. Async Sync .-> S2
         end
         
-        subgraph Shard N
+        subgraph Shard_N [Shard N]
             PN[(Primary Node N\nRAM)]
             SN[(Replica Node N\nRAM)]
             PN -. Async Sync .-> SN
         end
     end
 
-    subgraph Persistence Layer (Durability)
+    subgraph Persistence_Layer [Persistence Layer - Durability]
         WAL1[[Write-Ahead Log\nSSD]]
         WAL2[[Write-Ahead Log\nSSD]]
         WALN[[Write-Ahead Log\nSSD]]
     end
 
-    subgraph Observability
+    subgraph Observability_Layer [Observability]
         PROM[Prometheus\nMetrics]
         GRAF[Grafana\nDashboards]
     end

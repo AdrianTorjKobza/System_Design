@@ -44,5 +44,6 @@ graph TD
 * **PagedAttention:** A memory management algorithm that stores continuous KV cache values in non-contiguous virtual memory blocks (similar to an OS), virtually eliminating memory fragmentation.
 * **KV Cache (Key-Value Cache):** Memory used to store previously computed keys and values in the Transformer attention mechanism, saving compute cycles so past tokens don't need to be recalculated.
 * **Time-to-First-Token (TTFT):** The time elapsed between a client sending the request and receiving the very first generated text token.
+* **Sampling:** The algorithmic process of selecting the next generated token. Instead of rigidly picking the statistically highest probability every time (greedy decoding), the API utilizes parameters like Temperature, Top-K, and Top-P to warp the distribution model, introducing controlled randomness and creativity into the AI's output.
 * **Time-Per-Output-Token (TPOT):** The average time taken to generate each subsequent token after the initial prompt is processed.
 * **Server-Sent Events (SSE):** A server push technology enabling a client to receive automatic, real-time streaming text updates over a standard HTTP connection.

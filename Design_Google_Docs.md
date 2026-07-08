@@ -61,12 +61,12 @@ flowchart TD
 ## 3. Well-Architected Framework Analysis
 
 *   **Operational Excellence:**
-    *   **Observability:** The system uses a centralized observability stack (e.g., Prometheus for metrics, Grafana for visualization, Jaeger for distributed tracing, and ELK/Fluentd for log aggregation) to monitor WebSocket connection drops, API latency, and OT/CRDT resolution times.
+    *   **Observability:** The system uses a centralized observability stack (e.g. Prometheus for metrics, Grafana for visualization, Jaeger for distributed tracing, and ELK/Fluentd for log aggregation) to monitor WebSocket connection drops, API latency, and OT/CRDT resolution times.
     *   **Deployment:** Infrastructure as Code (IaC) via Terraform and GitOps practices (using ArgoCD or Flux) ensure repeatable, automated, and safe Kubernetes deployments. 
 
 *   **Security:**
     *   **Identity & Access Management:** User authentication is handled via OIDC/OAuth2 protocols. A Role-Based Access Control (RBAC) model enforces permissions (Viewer, Commenter, Editor, Owner) at the API Gateway level before requests reach the Document Management Service.
-    *   **Data Protection:** Data is encrypted in transit using TLS 1.3. Data at rest (in the Primary DB and Object Storage) is encrypted using AES-256 with rotation-managed keys (e.g., HashiCorp Vault). A WAF protects against DDoS and OWASP top 10 threats.
+    *   **Data Protection:** Data is encrypted in transit using TLS 1.3. Data at rest (in the Primary DB and Object Storage) is encrypted using AES-256 with rotation-managed keys (e.g. HashiCorp Vault). A WAF protects against DDoS and OWASP top 10 threats.
 
 *   **Reliability:**
     *   **Resiliency:** The WebSocket Service is stateless regarding document data; it solely manages connections. If a node fails, clients seamlessly reconnect to another node. 

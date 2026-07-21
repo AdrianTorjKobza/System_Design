@@ -3,7 +3,7 @@
 ## 1. Architecture Overview
 The proposed solution is a highly scalable, cloud-agnostic microservices architecture designed to replicate the core functionalities of a modern commission-free retail brokerage. Rather than acting as an exchange itself, the system routes trades through external market makers and exchanges. The architecture focuses heavily on decoupling read-heavy informational flows from write-heavy transactional operations.
 
-To handle massive concurrency during market hours and bursty traffic driven by market volatility, the system is decomposed into isolated domain services. Real-time market data leverages a WebSocket cluster backed by Redis Pub/Sub to push live price updates to clients with minimal latency and network bandwidth. Concurrently, the core trading engine rigorously enforces financial correctness. It utilizes a Risk Engine to continuously evaluate buying power in real-time and relies on ACID-compliant relational databases (like PostgreSQL) to prevent double-spending and guarantee atomic state changes. Limit orders are efficiently tracked and triggered using Redis Sorted Sets, which allow logarithmic time lookups against streaming market prices. Heavy asynchronous processes—such as clearing, reporting, and portfolio aggregation—are decoupled via an Apache Kafka event streaming layer to ensure strict ordering and high fault tolerance.
+To handle massive concurrency during market hours and bursty traffic driven by market volatility, the system is decomposed into isolated domain services. Real-time market data leverages a WebSocket cluster backed by Redis Pub/Sub to push live price updates to clients with minimal latency and network bandwidth. Concurrently, the core trading engine rigorously enforces financial correctness. It utilizes a Risk Engine to continuously evaluate buying power in real-time and relies on ACID-compliant relational databases (like PostgreSQL) to prevent double-spending and guarantee atomic state changes. Limit orders are efficiently tracked and triggered using Redis Sorted Sets, which allow logarithmic time lookups against streaming market prices. Heavy asynchronous processes, such as clearing, reporting, and portfolio aggregation, are decoupled via an Apache Kafka event streaming layer to ensure strict ordering and high fault tolerance.
 
 ## 2. Architecture Diagram
 
@@ -78,7 +78,32 @@ flowchart TB
     Port --> LedgerDB
 ```
 
-## 3. Well-Architected Framework Analysis
+## 3. End-to-End System Flow
+
+To understand how the decoupled domains interact, it is best to trace the lifecycles of the two most critical operations: streaming market prices (the read path) and executing a trade (the write path). 
+
+### Journey A: Live Market Data (The Read Path)
+This flow optimizes for lowest possible latency, bypassing heavy databases entirely.
+
+1. **Ingestion:** The Market Data Service (MDS) maintains persistent connections to external Exchange feeds, receiving thousands of price ticks per second.
+2. **Distribution:** The MDS normalizes this incoming data and publishes it to specific Redis Pub/Sub channels (e.g. `ticker:AAPL:price`).
+3. **Client Delivery:** The WebSocket Cluster, which holds active connections with millions of Client Devices, subscribes only to the Redis channels relevant to the stocks a user is actively viewing. When a price changes, the cluster instantly pushes the new data frame directly to the client UI.
+
+### Journey B: Executing a Market Order (The Write Path)
+This flow optimizes for strict consistency, atomicity, and fault tolerance.
+
+1. **Initiation & Auth:** A user taps "Buy". The Client Device sends an HTTP POST request through the Cloud Load Balancer to the API Gateway. The Gateway briefly routes to the Identity & Auth Service to validate the user's session, then forwards the request to the Order Management Service (OMS).
+2. **Risk Verification:** The OMS pauses the transaction to query the Risk & Buying Power Engine. This engine checks the Redis Cache for real-time buying power and verifies against the LedgerDB to ensure sufficient settled funds exist. If approved, those funds are temporarily "locked" in the cache to prevent double-spending.
+3. **Asynchronous Routing:** The OMS accepts the order, immediately returning a "Pending" UI state to the user. It then publishes a highly durable `TradeRequested` event to the Apache Kafka event stream and steps out of the critical path.
+4. **Execution:** The Exchange Routing Gateway consumes the Kafka event, formats the order (often into the FIX protocol), and routes it over a dedicated line to an external Market Maker for execution.
+5. **Ledger Settlement:** Upon receiving an execution confirmation from the Market Maker, the Gateway publishes a `TradeExecuted` event back to Kafka. The Portfolio & Ledger Service consumes this event, executing an ACID-compliant transaction in the LedgerDB that permanently deducts the locked cash and credits the user's portfolio with the new shares. 
+
+### Journey C: Triggering a Limit Order
+1. When a user submits a Limit Order, it follows the same initial path but isn't immediately routed. Instead, the Risk Engine places the order into the Redis Cache as a **Sorted Set (ZSET)**, indexing it by its target price.
+2. As live prices stream into the system from the MDS, the system continuously compares the current market price against the ZSET scores in lightning-fast O(log N) time.
+3. The moment the market price crosses the user's target threshold, the order is plucked from the cache, published as a `TradeRequested` event to Kafka, and flows through the standard execution and settlement routing (Journey B, Step 4).
+
+## 4. Well-Architected Framework Analysis
 
 ### Operational Excellence
 - **Infrastructure as Code (IaC):** Provision underlying infrastructure (Kubernetes, databases, brokers) via tools like Terraform to maintain consistency across staging and production.
@@ -109,7 +134,7 @@ flowchart TB
 - **Compute Efficiency:** Persistent WebSocket connections drastically reduce the repeated HTTP header overhead and compute cycles associated with standard client-side polling architectures.
 - **Rightsized Workloads:** By actively tearing down unneeded pods and containers outside of market hours, the platform minimizes idle power draw and reduces its overall carbon footprint.
 
-## 4. Technical Glossary
+## 5. Technical Glossary
 - **ACID (Atomicity, Consistency, Isolation, Durability):** A set of database properties intended to guarantee data validity despite errors or power failures. It is essential for avoiding double-spend scenarios in financial ledgers.
 - **Idempotency:** A system property where applying an operation multiple times yields the same result as applying it once. This is vital in trading to retry failed requests securely without executing duplicate orders.
 - **Market Order:** A request to immediately buy or sell a stock at the current prevailing market price.

@@ -1,99 +1,124 @@
-# Global Video Streaming Platform (YouTube) Architecture
+# Global Scale Video Streaming Architecture (YouTube Clone)
 
 ## 1. Architecture Overview
-
-This proposed architecture for a large-scale video streaming platform (akin to YouTube) utilizes a cloud-agnostic, microservices-based approach designed for high availability, extreme scalability, and fault tolerance. The system is split into two primary data flows: the **Read/Stream Path** and the **Write/Upload Path**. 
-
-When a user watches a video, the request is served primarily from a globally distributed Content Delivery Network (CDN) to ensure low latency and high throughput. When a user uploads a video, the system uses an asynchronous, event-driven architecture to handle the compute-intensive task of video transcoding. Core microservices manage user data, video metadata, search operations, and recommendations, backed by a polyglot persistence strategy tailored to specific data access patterns.
+This solution presents a highly scalable, cloud-agnostic microservices architecture designed to replicate the core functionalities of a global video streaming platform like YouTube. The design emphasizes high availability, low-latency video delivery, and decoupled asynchronous processing. By separating the read-heavy video streaming path from the write-heavy upload and transcoding path, the system can scale elastically to handle millions of concurrent viewers and thousands of parallel uploads.
 
 ## 2. Architecture Diagram
 
 ```mermaid
 graph TD
-    %% External Interfaces
-    Client([Client Devices: Web, Mobile, TV])
-    CDN[Content Delivery Network]
-    DNS[DNS Routing]
+    Client([Client / Browser / App])
+    CDN[Content Delivery Network Edge]
     WAF[Web Application Firewall]
+    LB[API Gateway / Load Balancer]
 
-    %% Edge & Ingress
-    Client -->|Video Streaming| CDN
-    Client -->|API Requests| DNS
-    DNS --> WAF
-    WAF --> APIGW[API Gateway / Load Balancer]
+    subgraph "Core Microservices"
+        UserSvc[User Service]
+        MetaSvc[Metadata Service]
+        UpSvc[Video Upload Service]
+        SearchSvc[Search Service]
+    end
 
-    %% Microservices
-    APIGW --> UploadSvc[Upload Service]
-    APIGW --> StreamSvc[Streaming & Metadata Service]
-    APIGW --> SearchSvc[Search Service]
-    APIGW --> RecSvc[Recommendation Service]
-    APIGW --> UserSvc[User Profile Service]
+    subgraph "Asynchronous Processing Pipeline"
+        MQ[Message Queue / Event Bus]
+        Transcoder[Transcoding Worker Cluster]
+        ThumbnailGen[Thumbnail Generator]
+    end
 
-    %% Write/Upload Path
-    UploadSvc --> RawStorage[(Raw Object Storage)]
-    UploadSvc --> Kafka[Message Queue / Kafka]
-    Kafka --> Transcoder[Transcoding Workers]
-    Transcoder --> ProcessedStorage[(Processed Object Storage)]
-    Transcoder -->|Update Status| StreamSvc
+    subgraph "Data & Storage Layer"
+        RawStorage[(Raw Video Object Storage)]
+        ProcStorage[(Processed Video Object Storage)]
+        MetaDB[(Metadata DB - Wide Column)]
+        SearchIndex[(Search Engine Index)]
+        Cache[(Distributed Cache - Redis)]
+    end
 
-    %% Read/Stream Path
-    CDN -.->|Cache Miss| ProcessedStorage
+    Client -->|1. Request Video| CDN
+    CDN -->|Cache Miss / Origin| ProcStorage
+    Client -->|2. API Calls| WAF
+    WAF --> LB
+
+    LB --> UserSvc
+    LB --> MetaSvc
+    LB --> UpSvc
+    LB --> SearchSvc
+
+    UpSvc -->|3a. Save Pre-Signed URL| RawStorage
+    UpSvc -->|3b. Publish Upload Event| MQ
     
-    %% Databases & Caching
-    StreamSvc --> RedisCache[(Distributed Cache: Redis)]
-    StreamSvc --> RelationalDB[(RDBMS: PostgreSQL)]
+    MQ -->|4a. Consume| Transcoder
+    MQ -->|4b. Consume| ThumbnailGen
     
-    UserSvc --> RelationalDB
+    Transcoder -->|Fetch| RawStorage
+    Transcoder -->|5. Save HLS/DASH| ProcStorage
+    Transcoder -->|6. Update Status| MetaSvc
     
-    SearchSvc --> Elastic[(Search Engine: Elasticsearch)]
-    RelationalDB -.->|Change Data Capture| Elastic
-    
-    RecSvc --> GraphDB[(Graph DB / NoSQL)]
-    RecSvc --> Hadoop[(Big Data Analytics)]
+    ThumbnailGen -->|Save Image| ProcStorage
+
+    MetaSvc <-->|Read/Write| MetaDB
+    MetaSvc <-->|Cache Check| Cache
+    SearchSvc -->|Query| SearchIndex
+    MetaDB -.->|Async Sync/CDC| SearchIndex
 ```
 
-## 3. Well-Architected Framework Analysis
+## 3. End-to-End System Flow
 
-### Operational Excellence
-*   **Infrastructure as Code (IaC):** All infrastructure is provisioned using cloud-agnostic tools like Terraform, allowing for reproducible and version-controlled environments.
-*   **Observability:** Comprehensive logging, metrics, and distributed tracing are implemented using tools like Prometheus, Grafana, and OpenTelemetry. This enables rapid troubleshooting of bottlenecks in video processing or streaming.
-*   **CI/CD Pipelines:** Automated testing and deployment pipelines ensure that microservices can be updated independently without platform downtime.
+### The Upload Pipeline (Write Path)
+1. **Initiation:** The user attempts to upload a video. The client requests a secure, pre-signed upload URL from the **Video Upload Service**.
+2. **Direct Upload:** The client bypasses the API Gateway and uploads the raw video file directly to **Raw Video Object Storage** using the pre-signed URL (chunked for reliability).
+3. **Event Generation:** Upon successful upload, the Object Storage triggers a webhook, or the client notifies the Upload Service, which publishes a `VideoUploaded` event to the **Message Queue**.
+4. **Transcoding & Processing:** **Transcoding Workers** consume the event, download the raw video, and process it into multiple resolutions (e.g. 1080p, 720p, 480p) and formats (HLS/DASH) suitable for Adaptive Bitrate Streaming (ABR). Concurrently, **Thumbnail Generators** create preview images.
+5. **Storage & Metadata Update:** Processed chunks are saved to **Processed Video Object Storage**. The workers call the **Metadata Service** to update the video state from "Processing" to "Published." 
+6. **Search Synchronization:** The Metadata DB utilizes Change Data Capture (CDC) to synchronize the new video metadata to the **Search Engine Index**.
 
-### Security
-*   **Edge Protection:** A Web Application Firewall (WAF) and DDoS mitigation strategies protect the API Gateway and underlying services from malicious traffic.
-*   **Identity & Access Management:** OAuth2/OIDC protocols handle user authentication and authorization securely.
-*   **Data Protection:** All data in transit is encrypted using TLS 1.3. Data at rest (videos in object storage, user data in databases) is encrypted using managed Key Management Services (KMS). Role-Based Access Control (RBAC) enforces principle-of-least-privilege among microservices.
+### The Streaming Pipeline (Read Path)
+1. **Video Discovery:** The user searches for a video via the **Search Service** or browses their feed via the **Metadata Service** (results are heavily cached in the **Distributed Cache**).
+2. **Playback Request:** The user clicks a video. The client retrieves the metadata, including the video's manifest URL (HLS/DASH).
+3. **Edge Delivery:** The client requests the video chunks from the nearest **Content Delivery Network (CDN)** edge node. 
+4. **Origin Fetch:** If the chunks are not cached at the edge, the CDN fetches them from the **Processed Video Object Storage** (the Origin), caches them, and streams them to the user.
 
-### Reliability
-*   **Multi-Region & Auto-Scaling:** The platform spans multiple availability zones and regions to survive localized outages. Services are deployed on a managed Kubernetes cluster with Horizontal Pod Autoscalers (HPA).
-*   **Asynchronous Processing:** Video uploads are decoupled from the transcoding process via message queues (Kafka). If a transcoding worker fails, the message remains in the queue and is re-assigned, ensuring no data loss.
-*   **Circuit Breakers & Fallbacks:** Microservices utilize circuit breaker patterns to prevent cascading failures. If the recommendation service is down, the system gracefully degrades by showing chronological or trending videos instead.
+## 4. Well-Architected Framework Analysis
 
-### Performance Efficiency
-*   **Content Delivery Network (CDN):** Heavy video files are cached at edge locations geographically closest to the user, drastically reducing buffering and origin server load.
-*   **Adaptive Bitrate Streaming (ABR):** Videos are transcoded into multiple resolutions and bitrates. The client dynamically pulls the best quality stream based on real-time network conditions.
-*   **Polyglot Persistence:** Data stores are optimized for their specific tasks (e.g., Elasticsearch for fast text queries, Redis for high-speed metadata caching, RDBMS for ACID transactions on user accounts).
+### 4.1 Operational Excellence
+* **Infrastructure as Code (IaC):** The entire architecture is provisioned using Terraform or Pulumi, ensuring repeatable and version-controlled environments.
+* **Observability:** Distributed tracing (e.g. OpenTelemetry) tracks requests across microservices. Prometheus and Grafana monitor system health, while ELK/EFK stacks aggregate logs.
+* **Deployment:** CI/CD pipelines automate testing and deployment using blue-green or canary release strategies to minimize downtime risk.
 
-### Cost Optimization
-*   **Storage Lifecycle Policies:** Raw video files are transitioned to cheaper, cold-storage tiers (e.g., Glacier equivalents) after successful transcoding. Unpopular transcoded videos are also pushed to lower-cost tiers.
-*   **Spot Instances for Transcoding:** Transcoding is compute-intensive but fault-tolerant and asynchronous. Utilizing highly discounted spot/preemptible instances for worker nodes significantly reduces compute costs.
-*   **Rightsizing & Serverless:** Resources are continuously monitored to ensure they are appropriately sized. Burst-heavy workloads may leverage serverless functions to scale to zero when idle.
+### 4.2 Security
+* **Data Protection:** All data is encrypted in transit using TLS 1.3 and at rest using AES-256. 
+* **Edge Security:** A Web Application Firewall (WAF) mitigates DDoS attacks, SQL injection, and XSS.
+* **Authentication/Authorization:** OAuth 2.0 and OpenID Connect manage user access. Pre-signed URLs ensure secure, time-bound access to object storage without exposing permanent credentials.
+* **Content Protection:** Digital Rights Management (DRM) can be integrated into the transcoding pipeline for premium content.
 
-### Sustainability
-*   **Efficient Codecs:** The platform prioritizes high-efficiency modern video codecs (like VP9 and AV1), which reduce the bandwidth and storage footprint required per video, directly lowering energy consumption during transmission and storage.
-*   **Energy-Efficient Compute:** Transitioning microservices and database instances to ARM-based processors where applicable, which generally offer a better performance-per-watt ratio.
-*   **Carbon-Aware Scaling:** Batch processing jobs (like generating weekly recommendation models or deep-archive backups) are scheduled during times when the local grid's carbon intensity is lowest.
+### 4.3 Reliability
+* **Redundancy:** Microservices are deployed across multiple Availability Zones (AZs) behind load balancers. 
+* **Resilience:** Circuit breakers (e.g. Resilience4j) prevent cascading failures if a downstream service (like the Metadata DB) degrades. 
+* **State Management:** Message Queues (e.g. Kafka or RabbitMQ) ensure zero data loss during the upload/transcoding phase. If a transcoding worker dies, the message returns to the queue for another worker.
 
-## 4. Technical Glossary
+### 4.4 Performance Efficiency
+* **Edge Caching:** The CDN dramatically reduces latency by serving video chunks geographically close to the user and offloads massive bandwidth requirements from the core infrastructure.
+* **Database Strategy:** A Wide-Column NoSQL database (e.g. Cassandra) is used for metadata to handle massive write scales, paired with a Distributed Cache (e.g. Redis) for sub-millisecond read access.
+* **Adaptive Bitrate Streaming:** Videos are transcoded into multiple bitrates. The client dynamically switches resolutions based on the user's real-time network conditions to prevent buffering.
 
-*   **API Gateway:** A server that acts as an API front-end, receiving API requests, enforcing throttling and security policies, passing requests to the back-end services, and then passing the response back to the requester.
-*   **Adaptive Bitrate Streaming (ABR):** A technique used in streaming multimedia over computer networks where the video quality adjusts dynamically based on the user's available bandwidth and CPU capacity.
-*   **CDN (Content Delivery Network):** A geographically distributed network of proxy servers and their data centers. The goal is to provide high availability and performance by distributing the service spatially relative to end-users.
-*   **Change Data Capture (CDC):** A set of software design patterns used to determine and track the data that has changed so that action can be taken using the changed data (e.g., syncing a relational database to Elasticsearch).
-*   **Horizontal Pod Autoscaler (HPA):** A Kubernetes feature that automatically scales the number of pods in a deployment based on observed CPU utilization or other select metrics.
-*   **Message Queue (e.g., Kafka):** An asynchronous service-to-service communication method used in serverless and microservices architectures. Messages are stored on the queue until they are processed and deleted.
-*   **Microservices Architecture:** An architectural style that structures an application as a collection of loosely coupled, independently deployable services organized around business capabilities.
-*   **Polyglot Persistence:** The practice of using different data storage technologies to handle varying data storage needs within a single software application.
-*   **Spot Instances:** Spare compute capacity offered by cloud providers at steep discounts compared to On-Demand prices. They can be interrupted with little notice, making them suitable only for fault-tolerant workloads.
-*   **Transcoding:** The direct digital-to-digital conversion of one encoding to another. In video platforms, it involves converting an uploaded raw video into various formats and resolutions (1080p, 720p, 480p) to support different devices and network speeds.
-*   **WAF (Web Application Firewall):** A firewall that filters, monitors, and blocks HTTP traffic to and from a web application to protect against malicious attacks like SQL injection or cross-site scripting.
+### 4.5 Cost Optimization
+* **Compute Optimization:** Transcoding is a highly parallel, compute-intensive task. Spot instances (or preemptible VMs) are utilized for worker nodes to reduce compute costs by up to 80%.
+* **Storage Lifecycle Policies:** Raw videos are transitioned to cheaper, cold storage (e.g. Glacier/Archive tiers) after transcoding is complete. Rarely accessed processed videos can also be moved to lower-tier storage.
+* **Right-Sizing:** Auto-scaling groups dynamically spin up web servers during peak hours and scale them down during off-peak hours.
+
+### 4.6 Sustainability
+* **Silicon Efficiency:** Leveraging ARM-based processors (like AWS Graviton or GCP Ampere) for microservices yields higher performance per watt, reducing the system's carbon footprint.
+* **Green Regions:** Prioritizing cloud regions powered by 100% renewable energy for the heavy batch-processing jobs (transcoding).
+* **Network Efficiency:** Aggressive CDN caching minimizes the energy required to transmit data repeatedly across long-haul internet backbones.
+
+## 5. Technical Glossary
+
+* **ABR (Adaptive Bitrate Streaming):** A technique that dynamically adjusts the quality of a video stream in real-time based on the viewer's available bandwidth and device capabilities.
+* **CDC (Change Data Capture):** A software pattern used to determine and track data that has changed so that action can be taken using the changed data (e.g. syncing a DB to a Search Index).
+* **CDN (Content Delivery Network):** A geographically distributed network of proxy servers and their data centers designed to provide high availability and performance by distributing service spatially relative to end-users.
+* **DASH (Dynamic Adaptive Streaming over HTTP):** An adaptive bitrate video streaming protocol that enables high-quality streaming of media content over the internet delivered from conventional HTTP web servers.
+* **HLS (HTTP Live Streaming):** An adaptive bitrate streaming protocol developed by Apple, widely used for delivering video content.
+* **IaC (Infrastructure as Code):** The process of managing and provisioning computing infrastructure through machine-readable definition files, rather than physical hardware configuration.
+* **Message Queue / Event Bus:** An asynchronous service-to-service communication method used in serverless and microservices architectures (e.g. Apache Kafka, RabbitMQ).
+* **Pre-Signed URL:** A URL that grants temporary, restricted access to a specific object in storage, allowing direct uploads/downloads without routing heavy files through an application server.
+* **Transcoding:** The process of converting a media file from one format, size, or bitrate to another to support diverse devices and network conditions.
+* **Wide-Column NoSQL:** A type of NoSQL database (e.g. Apache Cassandra, ScyllaDB) optimized for massive write volumes and high availability across distributed networks.

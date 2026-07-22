@@ -1,145 +1,103 @@
-# Cloud-Native Stock Trading Platform Architecture (Robinhood Clone)
+# Trading Platform Architecture (Robinhood Clone)
 
 ## 1. Architecture Overview
-The proposed solution is a highly scalable, cloud-agnostic microservices architecture designed to replicate the core functionalities of a modern commission-free retail brokerage. Rather than acting as an exchange itself, the system routes trades through external market makers and exchanges. The architecture focuses heavily on decoupling read-heavy informational flows from write-heavy transactional operations.
-
-To handle massive concurrency during market hours and bursty traffic driven by market volatility, the system is decomposed into isolated domain services. Real-time market data leverages a WebSocket cluster backed by Redis Pub/Sub to push live price updates to clients with minimal latency and network bandwidth. Concurrently, the core trading engine rigorously enforces financial correctness. It utilizes a Risk Engine to continuously evaluate buying power in real-time and relies on ACID-compliant relational databases (like PostgreSQL) to prevent double-spending and guarantee atomic state changes. Limit orders are efficiently tracked and triggered using Redis Sorted Sets, which allow logarithmic time lookups against streaming market prices. Heavy asynchronous processes, such as clearing, reporting, and portfolio aggregation, are decoupled via an Apache Kafka event streaming layer to ensure strict ordering and high fault tolerance.
+This solution represents a highly scalable, event-driven, cloud-agnostic microservices architecture designed to support a zero-commission trading platform like Robinhood. The system is built to handle massive concurrency, extreme market volatility, and stringent regulatory requirements. Transitioning away from early monolithic designs, this architecture leverages containerized microservices managed by Kubernetes, utilizing event streaming (Apache Kafka) for real-time market data and asynchronous trade processing. State management is decentralized, relying on a sharded PostgreSQL strategy for the core financial ledger to ensure ACID compliance while achieving horizontal scalability. Core trading components are built using high-performance languages like Go and Rust to minimize latency, while big data operations utilize a robust Data Lake and Spark on Kubernetes for end-of-day clearing and analytics.
 
 ## 2. Architecture Diagram
 
 ```mermaid
-flowchart TB
+graph TD
     %% External Entities
-    Client[Client Devices]
-    Exchanges((Market Makers\n& Exchanges))
-    
-    %% Entrypoints
-    LB[Cloud Load Balancer]
-    API[API Gateway]
-    WS[WebSocket Cluster]
-    
-    %% Microservices - Market Data
-    subgraph Market Data Domain
-        MDS[Market Data Service]
-        RedisPubSub[(Redis Pub/Sub)]
-    end
-    
-    %% Microservices - Core Trading
-    subgraph Core Trading Domain
-        OMS[Order Management Service]
-        Risk[Risk & Buying Power Engine]
-        Port[Portfolio & Ledger Service]
-        Gtwy[Exchange Routing Gateway]
-    end
-    
-    %% Microservices - User & Funding
-    subgraph User Management
-        Auth[Identity & Auth Service]
-        Fund[Funding & Bank Integration]
-    end
-    
-    %% Event Broker
-    Kafka[[Apache Kafka\nEvent Streaming]]
-    
-    %% Data Stores
-    UserDB[(User Data\nPostgreSQL)]
-    LedgerDB[(Ledger & Orders\nPostgreSQL)]
-    Cache[(Redis Cache\n& Sorted Sets)]
+    Client[Mobile / Web Client]
+    MM[Market Makers / Clearinghouses]
+    Feeds[External Market Data Feeds]
 
-    %% Traffic Flow - User/Client
-    Client <--> LB
-    LB --> API
-    LB <--> WS
-    
-    %% Market Data Flow
-    Exchanges -- Live Price Feeds --> MDS
-    MDS --> RedisPubSub
-    RedisPubSub -- Subscribes --> WS
-    
-    %% API Routing
-    API --> Auth
-    API --> Fund
-    API --> OMS
-    API --> Port
-    
-    %% Core Trading Flow
-    OMS <--> Risk
-    Risk <--> Cache
-    OMS --> Kafka
-    Kafka --> Gtwy
-    Kafka --> Port
-    
-    %% Gateway to Exchange
-    Gtwy -- Routes Orders --> Exchanges
-    
-    %% Database connections
-    Auth --> UserDB
-    Fund --> LedgerDB
-    Port --> LedgerDB
+    %% Edge
+    WAF[WAF / CDN]
+    API[API Gateway / Load Balancer]
+
+    %% Microservices (Kubernetes)
+    Auth[Auth & User Service]
+    OMS[Order Management Service]
+    Risk[Risk & Compliance Service]
+    Ledger[Ledger & Wallet Service]
+    Router[Order Routing / Matching Engine]
+    MarketData[Market Data Service]
+    Notify[Notification Service]
+    Batch[Batch Processing / Clearing]
+
+    %% Infrastructure & Data Stores
+    Kafka[[Apache Kafka Event Bus]]
+    DB_Auth[(PostgreSQL: User/KYC)]
+    DB_Ledger[(Sharded PostgreSQL: Ledger)]
+    Redis[(Redis: Cache & Sessions)]
+    TSDB[(Time-Series DB)]
+    S3[(AWS S3 / Data Lake)]
+
+    %% Flow
+    Client -->|HTTPS / WSS| WAF
+    WAF --> API
+
+    API -->|Authentication| Auth
+    API -->|Submit Trade| OMS
+    API -->|WebSocket Subs| MarketData
+
+    Auth <--> DB_Auth
+    Auth <--> Redis
+
+    OMS --> Risk
+    Risk --> Ledger
+    Ledger <--> DB_Ledger
+
+    OMS -->|Validated Order| Router
+    Router <-->|FIX Protocol| MM
+    Router -->|Execution Event| Kafka
+
+    Feeds -->|Tick Data| Kafka
+    Kafka -->|Stream Ticks| MarketData
+    MarketData --> TSDB
+    MarketData --> Redis
+
+    Kafka -->|Settle / Finalize| Ledger
+    Kafka -->|Push Alert| Notify
+    Notify -->|Alert| Client
+
+    Kafka -->|Data Archival| S3
+    Batch -->|End of Day Jobs| S3
+    Batch --> DB_Ledger
 ```
 
 ## 3. End-to-End System Flow
 
-To understand how the decoupled domains interact, it is best to trace the lifecycles of the two most critical operations: streaming market prices (the read path) and executing a trade (the write path). 
-
-### Journey A: Live Market Data (The Read Path)
-This flow optimizes for lowest possible latency, bypassing heavy databases entirely.
-
-1. **Ingestion:** The Market Data Service (MDS) maintains persistent connections to external Exchange feeds, receiving thousands of price ticks per second.
-2. **Distribution:** The MDS normalizes this incoming data and publishes it to specific Redis Pub/Sub channels (e.g. `ticker:AAPL:price`).
-3. **Client Delivery:** The WebSocket Cluster, which holds active connections with millions of Client Devices, subscribes only to the Redis channels relevant to the stocks a user is actively viewing. When a price changes, the cluster instantly pushes the new data frame directly to the client UI.
-
-### Journey B: Executing a Market Order (The Write Path)
-This flow optimizes for strict consistency, atomicity, and fault tolerance.
-
-1. **Initiation & Auth:** A user taps "Buy". The Client Device sends an HTTP POST request through the Cloud Load Balancer to the API Gateway. The Gateway briefly routes to the Identity & Auth Service to validate the user's session, then forwards the request to the Order Management Service (OMS).
-2. **Risk Verification:** The OMS pauses the transaction to query the Risk & Buying Power Engine. This engine checks the Redis Cache for real-time buying power and verifies against the LedgerDB to ensure sufficient settled funds exist. If approved, those funds are temporarily "locked" in the cache to prevent double-spending.
-3. **Asynchronous Routing:** The OMS accepts the order, immediately returning a "Pending" UI state to the user. It then publishes a highly durable `TradeRequested` event to the Apache Kafka event stream and steps out of the critical path.
-4. **Execution:** The Exchange Routing Gateway consumes the Kafka event, formats the order (often into the FIX protocol), and routes it over a dedicated line to an external Market Maker for execution.
-5. **Ledger Settlement:** Upon receiving an execution confirmation from the Market Maker, the Gateway publishes a `TradeExecuted` event back to Kafka. The Portfolio & Ledger Service consumes this event, executing an ACID-compliant transaction in the LedgerDB that permanently deducts the locked cash and credits the user's portfolio with the new shares. 
-
-### Journey C: Triggering a Limit Order
-1. When a user submits a Limit Order, it follows the same initial path but isn't immediately routed. Instead, the Risk Engine places the order into the Redis Cache as a **Sorted Set (ZSET)**, indexing it by its target price.
-2. As live prices stream into the system from the MDS, the system continuously compares the current market price against the ZSET scores in lightning-fast O(log N) time.
-3. The moment the market price crosses the user's target threshold, the order is plucked from the cache, published as a `TradeRequested` event to Kafka, and flows through the standard execution and settlement routing (Journey B, Step 4).
+1. **Market Data Ingestion**: External market data feeds (e.g. NASDAQ, NYSE) continuously stream tick data into the system. This data is ingested into Apache Kafka. The **Market Data Service** consumes these streams, caching the latest prices in Redis, persisting historical data to a Time-Series Database (TSDB), and pushing real-time updates to connected client apps via WebSockets.
+2. **Order Placement**: A user submits a buy/sell order via the mobile app. The request passes through the WAF/CDN to the **API Gateway**, which routes it to the **Order Management Service (OMS)**. 
+3. **Risk & Ledger Validation**: The OMS immediately queries the **Risk & Compliance Service** to verify trading rules (e.g. Pattern Day Trader limits, margin requirements). Simultaneously, it calls the **Ledger Service** to lock the required funds or shares. The Ledger utilizes a sharded PostgreSQL database to handle high throughput while maintaining strict transactional integrity.
+4. **Execution & Routing**: Once validated, the order flows to the **Order Routing Engine**. 
+    * *For Equities:* The engine routes the order to external Market Makers via the FIX protocol for execution (often utilizing Payment for Order Flow models). 
+    * *For Crypto/Fractional Shares:* The order is routed to an internal **Matching Engine** that pairs buyers and sellers using Price-Time Priority algorithms. 
+    * These critical execution services are built in Go or Rust to guarantee predictable, ultra-low latency.
+5. **Post-Trade Processing**: Upon execution, the Routing Engine publishes an `OrderExecuted` event to Kafka. The Ledger Service consumes this event to finalize the balance transfer, releasing the hold and permanently recording the trade. The **Notification Service** also consumes this event to push a real-time trade confirmation to the user's device.
+6. **Clearing & Settlement**: After market hours, **Batch Processing** jobs run. Leveraging Apache Spark on Kubernetes orchestrated by Airflow, the system digests the daily trade logs from the S3 Data Lake, reconciles discrepancies, and generates files for external clearinghouses (T+1 settlement).
 
 ## 4. Well-Architected Framework Analysis
 
-### Operational Excellence
-- **Infrastructure as Code (IaC):** Provision underlying infrastructure (Kubernetes, databases, brokers) via tools like Terraform to maintain consistency across staging and production.
-- **End-to-End Observability:** Centralized logging and distributed tracing (e.g. OpenTelemetry) are critical to track the complete lifecycle of a trading order as it traverses multiple microservices.
-- **Safe Deployments:** Blue/Green or Canary deployments ensure that system updates can be rolled back instantly without disrupting active market sessions.
-
-### Security
-- **Data Protection:** To comply with frameworks like PCI-DSS and SOC 2, all financial data and Personally Identifiable Information (PII) is encrypted at rest and in transit.
-- **Audit Trails:** Immutable, append-only logs record all state changes for orders, transactions, and account funding to satisfy strict regulatory oversight.
-- **Zero Trust Authentication:** Strict API authentication (OAuth2 / OIDC) and internal mutual TLS (mTLS) are utilized across all microservice communication.
-
-### Reliability
-- **Domain Isolation:** Microservice decomposition ensures that a failure in market data feeds will not prevent a user from managing their existing portfolio or withdrawing funds.
-- **Idempotent Operations:** The order execution and routing workflows are strictly idempotent to prevent duplicate trade executions or lost acknowledgments from causing unrecoverable financial discrepancies.
-- **Graceful Degradation:** If the WebSocket layer experiences connection drops, clients automatically failover to HTTP polling to maintain functionality.
-
-### Performance Efficiency
-- **Push-based Messaging:** Using Redis Pub/Sub in conjunction with WebSockets allows the system to efficiently push data only when prices change, avoiding the overhead of millions of simultaneous polling requests.
-- **In-Memory Order Matching:** Storing active limit orders in Redis Sorted Sets enables extremely fast, O(log N) time complexity searches to trigger trades immediately when market conditions are met.
-- **Asynchronous Offloading:** Event-driven architecture via Kafka ensures that high-latency tasks (like generating user statements or settlement clearing) do not block the critical, low-latency path of placing a trade.
-
-### Cost Optimization
-- **Elastic Scalability:** Kubernetes Horizontal Pod Autoscalers dynamically scale out API and WebSocket compute resources during massive traffic surges (e.g. market open, meme stock rallies) and scale them down to save costs during off-hours or weekends.
-- **Data Tiering:** Active ledger data is kept on high-performance block storage, while historical trades and settled orders are periodically archived to cost-effective object storage.
-- **Managed PaaS:** Utilizing managed Kafka and Database services shifts maintenance overhead from engineering to the cloud provider, optimizing total cost of ownership.
-
-### Sustainability
-- **Compute Efficiency:** Persistent WebSocket connections drastically reduce the repeated HTTP header overhead and compute cycles associated with standard client-side polling architectures.
-- **Rightsized Workloads:** By actively tearing down unneeded pods and containers outside of market hours, the platform minimizes idle power draw and reduces its overall carbon footprint.
+* **Operational Excellence**: Deployment complexity is managed by utilizing Kubernetes Custom Resource Definitions (CRDs) to create standardized application templates (archetypes) across all engineering teams. Infrastructure as Code (IaC) via Terraform, paired with continuous integration pipelines, ensures repeatable and safe rollouts. Apache Airflow orchestrates complex, multi-stage ETL and batch jobs.
+* **Security**: Network traffic is protected by a Web Application Firewall (WAF) to mitigate DDoS attacks. All internal microservice communication is secured via mutual TLS (mTLS). User authentication requires OAuth2 and mandatory two-factor authentication (2FA). Sensitive PII and financial data are encrypted at rest using AES-256. 
+* **Reliability**: The system relies heavily on multi-AZ deployments and stateless microservices to survive node failures. By sharding the PostgreSQL databases, distributing user data across multiple independent clusters, the architecture drastically reduces the "blast radius" of any single database failure. Kafka provides fault-tolerant message durability, ensuring no trade events are lost during sudden traffic spikes.
+* **Performance Efficiency**: To maintain microsecond latency during market open, core trading logic is written in Go and Rust. Heavy read operations for market charts are served via Redis and specialized Time-Series Databases. WebSockets replace standard HTTP polling, drastically reducing network overhead and delivering true real-time experiences to users.
+* **Cost Optimization**: The platform capitalizes on the cyclical nature of financial markets. Kubernetes clusters automatically scale down web and matching pods after market hours. The resulting spare compute capacity is then repurposed at night to run heavy Spark batch processing jobs, maximizing resource utilization without provisioning expensive dedicated big-data clusters.
+* **Sustainability**: Adopting modern, compiled languages (Go/Rust) for intensive workloads reduces CPU cycle waste and energy consumption compared to older interpreted language monoliths. Right-sizing auto-scaling groups ensures cloud instances are only powered when actively necessary.
 
 ## 5. Technical Glossary
-- **ACID (Atomicity, Consistency, Isolation, Durability):** A set of database properties intended to guarantee data validity despite errors or power failures. It is essential for avoiding double-spend scenarios in financial ledgers.
-- **Idempotency:** A system property where applying an operation multiple times yields the same result as applying it once. This is vital in trading to retry failed requests securely without executing duplicate orders.
-- **Market Order:** A request to immediately buy or sell a stock at the current prevailing market price.
-- **Limit Order:** A request to buy or sell a stock only if the market price reaches a specified target.
-- **Market Maker:** External financial institutions that provide market liquidity. Brokerages route client orders to these entities for execution.
-- **Redis Pub/Sub:** A real-time messaging paradigm where publishers push data to specific channels, and subscribers receive it instantly, ideal for broadcasting live stock prices.
-- **Redis Sorted Sets (ZSET):** A data structure that stores members mapped to a floating-point score. Used in this architecture to index limit orders by their target price for lightning-fast retrieval.
-- **Thundering Herd Problem:** A scenario where a massive number of limit orders are simultaneously triggered by a single stock price movement, potentially causing system bottlenecks if not handled by efficient data structures.
+
+* **API Gateway**: A server that acts as an API front-end, receiving API requests, enforcing rate limits, authenticating traffic, and routing them to the appropriate backend microservices.
+* **CRD (Custom Resource Definition)**: An extension of the Kubernetes API that allows users to define custom resources and orchestration logic tailored to their specific applications.
+* **FIX Protocol (Financial Information eXchange)**: An electronic communications protocol heavily used in the global financial markets for real-time exchange of securities transactions and market data.
+* **Kafka (Apache Kafka)**: A distributed event streaming platform used as the central nervous system of the architecture, handling trillions of events a day with high throughput and low latency.
+* **Market Maker**: A firm or individual that actively quotes two-sided markets in a security, providing bids and offers along with the market size of each, ensuring liquidity in the market.
+* **Matching Engine**: The core software and hardware mechanism of a trading exchange that pairs compatible buy and sell orders. 
+* **OMS (Order Management System)**: A centralized software system that facilitates and manages the execution of trade orders, acting as the gateway between the user and the market.
+* **PFOF (Payment for Order Flow)**: The compensation a broker (like Robinhood) receives for routing its clients' trades to a specific market maker for execution.
+* **Sharding**: A database architecture pattern that partitions a single massive database into smaller, faster, and more easily managed parts called data shards.
+* **TSDB (Time-Series Database)**: A database optimized for storing and serving time-stamped or time-series data, ideal for financial charts (e.g. InfluxDB).
+* **WSS (WebSocket Secure)**: A communications protocol providing full-duplex communication channels over a single, secure TCP connection, used to push live stock prices to user apps.

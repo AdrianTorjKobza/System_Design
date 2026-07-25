@@ -84,7 +84,7 @@ graph TD
 
 ### 4.2 Security
 - **Defense-in-Depth**: Security is enforced at every layer: input filtering (Injection/PII), semantic intent validation, deterministic authorization (RBAC), and physical isolation (Sandboxes).
-- **Data Privacy & Zero Trust**: PII and credentials are masked *before* hitting third-party LLM providers, ensuring sensitive user data never trains or resides in external model contexts.
+- **Data Privacy & Zero Trust**: PII and credentials are masked before hitting third-party LLM providers, ensuring sensitive user data never trains or resides in external model contexts.
 - **Indirect Injection Mitigation**: Untrusted data retrieved by agents (e.g. web scraping, email body parsing) passes through the same intent and input filter pipeline to prevent data-triggered instruction overrides.
 
 ### 4.3 Reliability
@@ -106,8 +106,8 @@ graph TD
 
 - **Agentic AI**: AI systems capable of planning, reasoning, and executing multi-step workflows across external APIs on behalf of a user.
 - **Direct Prompt Injection**: An attack where a user inputs crafted instructions to bypass safety system prompts and hijack the AI’s behavior.
-- **Indirect Prompt Injection**: An attack where an AI processes untrusted external content (e.g., a malicious email or webpage) containing hidden instructions that hijack the AI's execution plan.
-- **Ephemeral Sandbox**: A temporary, isolated computing environment (e.g., container or microVM) provisioned strictly to execute a single action and self-destruct immediately after.
+- **Indirect Prompt Injection**: An attack where an AI processes untrusted external content (e.g. a malicious email or webpage) containing hidden instructions that hijack the AI's execution plan.
+- **Ephemeral Sandbox**: A temporary, isolated computing environment (e.g. container or microVM) provisioned strictly to execute a single action and self-destruct immediately after.
 - **Human-in-the-Loop (HITL)**: A safeguard pattern requiring explicit human authorization before executing actions classified as high-risk or irreversible.
 - **Intent Boundary Evaluator**: A semantic check verifying that the AI's formulated execution plan strictly aligns with the user's original request scope and authorized tasks.
 - **PII & Secrets Anonymization**: The process of detecting, redacting, or replacing Personally Identifiable Information and sensitive keys with non-sensitive surrogate tokens before sending payloads to LLM providers.

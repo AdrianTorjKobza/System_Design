@@ -1,22 +1,36 @@
-# AI Action Safeguard Architecture: A Defense-in-Depth Approach
+# AI Action Safeguard Architecture: End-to-End Governance & Defense-in-Depth
 
 ## 1. Architecture Overview
-This solution defines a cloud-agnostic, microservices-based architecture designed to securely govern, evaluate, and execute actions proposed by autonomous or semi-autonomous AI agents. As AI systems shift from generative (providing information) to agentic (taking actions), the blast radius of potential errors or malicious prompt injections expands significantly. 
+This solution defines a cloud-agnostic, microservices-based architecture designed to securely govern, evaluate, and execute actions proposed by autonomous or semi-autonomous AI agents. As AI systems shift from generative (providing information) to agentic (taking real-world actions), the blast radius of potential errors, prompt injections, and data leaks expands significantly.
 
-To mitigate these risks, this architecture decouples the "Brain" (the AI Agent Service) from the "Hands" (the Action Executor) using a robust Safeguard Engine. It acts as a Policy Enforcement Point (PEP) that evaluates every action against deterministic rules, historical behavior, and risk thresholds. By introducing Ephemeral Execution Environments and a Human-in-the-Loop (HITL) gateway, the system ensures that high-risk actions are explicitly authorized and contained, preventing runaway loops and unauthorized state changes.
+To mitigate these risks, this architecture enforces a strict **Defense-in-Depth** strategy split into three core phases:
+1. **Input & Data Protection Guardrails**: Intercepts user inputs at the ingress layer to neutralize Direct/Indirect Prompt Injections and mask Personally Identifiable Information (PII) or API secrets before payloads hit the LLM.
+2. **Intent & Policy Boundary Validation**: Validates the AI’s generated intent against semantic alignment boundaries to ensure it stays within its authorized functional domain.
+3. **Action Safeguards & Isolated Execution**: Decouples the "Brain" (AI Agent) from the "Hands" (Action Executor). A Policy Enforcement Point (PEP) evaluates proposed actions against deterministic rules, risk scores, and rate limits, routing high-risk actions through a Human-in-the-Loop (HITL) gateway and executing approved actions inside isolated, ephemeral sandboxes.
 
 ## 2. Architecture Diagram
 
 ```mermaid
 graph TD
-    %% Core Services
-    U[User / Client Interface] -->|Intent / Request| API[API Gateway]
-    API --> AI[AI Agent Service]
+    %% User & Ingress Layer
+    U[User / Client Interface] -->|Raw Prompt / Request| API[API Gateway]
     
-    %% Safeguard Engine (The Shield)
-    AI -->|Proposed Action Payload| SE[Safeguard Engine / PEP]
+    subgraph Ingress Guardrails Pipeline
+        API --> InjectionFilter[Prompt Injection & Jailbreak Detector]
+        InjectionFilter -->|Clean Prompt| PIIMasker[PII & Secrets Anonymizer]
+    end
     
-    subgraph Safeguard Layer
+    %% AI Reasoning & Intent Layer
+    PIIMasker -->|Sanitized Prompt + Tokens| AI[AI Agent Service]
+    
+    subgraph Intent & Policy Alignment
+        AI -->|Proposed Intent / Strategy| IntentVal[Intent Boundary Evaluator]
+    end
+
+    %% Safeguard Layer (PEP)
+    IntentVal -->|Validated Action Payload| SE[Safeguard Engine / PEP]
+    
+    subgraph Execution Safeguards
         SE --> Val[Schema & RBAC Validator]
         SE --> RL[Rate Limiter & Quota Engine]
         SE --> AD[Anomaly & Risk Evaluator]
@@ -33,64 +47,69 @@ graph TD
     Gate -->|Low Risk / Safe| Exec
     
     Exec -->|Provisions| Sandbox[Ephemeral Execution Container]
-    Sandbox -->|Issues Signed Request| Target[Target System / API]
+    Sandbox -->|Signed API Call| Target[Target System / API]
     
-    %% Observability Layer
-    Sandbox -->|State & Results| AL[(Immutable Audit Ledger)]
-    SE -->|Intercepts & Violations| AL
-    AL -.->|Feedback / Context| AI
+    %% Output Egress & Observability
+    Sandbox -->|Raw Execution Result| OutMask[Output PII & Secret Masker]
+    OutMask -->|Sanitized Response| U
+    
+    Sandbox -->|Audit Payload| AL[(Immutable Audit Ledger)]
+    SE -->|Violations & Intercepts| AL
+    InjectionFilter -->|Injection Attempts| AL
 ```
 
 ## 3. End-to-End System Flow
 
-1. **Intent Generation**: The User interacts with the system via the Client Interface, triggering an intent. The API Gateway routes this to the AI Agent Service.
-2. **Action Proposal**: The AI Agent Service synthesizes the request and generates a standardized, machine-readable "Action Payload" (e.g. JSON indicating target system, desired state change, and parameters). *Crucially, the AI has no direct access to target APIs.*
-3. **Safeguard Interception**: The Action Payload is intercepted by the Safeguard Engine (Policy Enforcement Point).
-4. **Deterministic Validation**: The payload undergoes schema validation and Role-Based Access Control (RBAC) checks to ensure the user actually has the permissions the AI is trying to exercise on their behalf.
-5. **Heuristic & Risk Evaluation**: The Anomaly & Risk Evaluator inspects the payload for unusual patterns (e.g. deleting 1,000 files when the user typically deletes 5) and assesses the "Blast Radius." The Rate Limiter ensures the AI is not caught in an infinite retry loop (e.g. max 10 actions per minute).
-6. **Decision Routing**:
-   - *Low Risk*: Routine, reversible actions proceed directly to the Action Executor.
-   - *High Risk*: Destructive, expensive, or highly sensitive actions are routed to a Human-in-the-Loop (HITL) Queue (e.g. Kafka or RabbitMQ). The system suspends execution and alerts the user for explicit approval via push notification or dashboard.
-7. **Isolated Execution**: Once approved (automatically or manually), the Action Executor provisions a just-in-time, ephemeral container (e.g. Kubernetes Job). This sandbox is injected with short-lived, scoped credentials to execute the specific task.
-8. **Audit & Teardown**: The sandbox executes the API call to the Target System, logs the response to the Immutable Audit Ledger, and immediately self-destructs to prevent credential leakage or lateral movement.
+1. **Ingress & Input Defense**: 
+   - The user submits a prompt or task request via the Client Interface.
+   - The **Prompt Injection & Jailbreak Detector** inspects the input using lightweight semantic classifiers to catch direct prompt injections or system prompt overrides.
+   - The **PII & Secrets Anonymizer** scans for credit card numbers, SSNs, token strings, and credentials, swapping sensitive values with cryptographic surrogate tokens (e.g. `[PII_EMAIL_1]`) before reaching the LLM context window.
+2. **AI Reasoning & Intent Synthesis**: The AI Agent Service processes the sanitized prompt and formulates a plan, generating a structured action proposal.
+3. **Intent Boundary Validation**: The **Intent Boundary Evaluator** evaluates whether the proposed action semantically matches the user's explicit request and fits within the agent's system mandate (preventing goal hijacking or indirect prompt injection via untrusted external data sources).
+4. **Action Policy Enforcement**: The structured Action Payload is passed to the **Safeguard Engine (PEP)**:
+   - **Schema & RBAC Validator**: Ensures the user has the explicit permissions required to execute the target action.
+   - **Rate Limiter & Quota Engine**: Prevents AI infinite loops or runaway API consumption.
+   - **Anomaly & Risk Evaluator**: Calculates a composite risk score based on blast radius, historical action patterns, and target system sensitivity.
+5. **Decision & Human-in-the-Loop (HITL) Routing**:
+   - *Low-Risk Actions* (e.g. read-only data, non-destructive state changes) proceed automatically.
+   - *High-Risk Actions* (e.g. financial transactions, bulk deletions) pause execution and enter the HITL Queue, sending a confirmation request to the user with the detokenized details of the action.
+6. **Isolated Sandbox Execution**: Upon authorization, the **Action Executor** spins up a short-lived, isolated container (e.g. Kubernetes Job/MicroVM). It detokenizes any required parameters using a secure secrets manager, executes the API call against the Target System, and tears down the environment.
+7. **Egress Masking & Auditing**: The response from the target system passes through an **Output PII & Secret Masker** to ensure zero downstream leak of sensitive internal data back to the user or agent context. All steps are immutably logged to an Audit Ledger.
 
 ## 4. Well-Architected Framework Analysis
 
 ### 4.1 Operational Excellence
-- **Centralized Observability**: All proposed actions, safeguard rejections, and execution results are streamed to a central logging platform (e.g. ELK stack, Datadog). 
-- **Policy as Code (PaC)**: Safeguard rules are managed via CI/CD pipelines, allowing infrastructure teams to deploy or rollback safety thresholds without modifying the core AI agent logic.
-- **Traceability**: Every action carries a unique correlation ID linking the final API call back to the exact user prompt and AI generation trace.
+- **Centralized Guardrail Rulesets**: Input detection models, PII regex maps, and intent boundary schemas are decoupled from core application code, allowing updates via Policy as Code (PaC) without redeploying the AI agent service.
+- **Traceability & Detokenization Vaults**: Audit logs maintain a clear line of lineage linking user prompts, detokenization maps, policy checks, and sandbox outputs using unified correlation IDs.
 
 ### 4.2 Security
-- **Defense in Depth**: The AI is completely segmented from the network where actual API execution happens. 
-- **Zero Trust & Least Privilege**: The Action Executor relies on Ephemeral Sandboxes with short-lived tokens. The environment only possesses the exact permissions needed for that single action.
-- **Immutable Auditing**: Logs are stored in a write-once-read-many (WORM) database, ensuring non-repudiation if an action needs to be forensically investigated.
+- **Defense-in-Depth**: Security is enforced at every layer: input filtering (Injection/PII), semantic intent validation, deterministic authorization (RBAC), and physical isolation (Sandboxes).
+- **Data Privacy & Zero Trust**: PII and credentials are masked *before* hitting third-party LLM providers, ensuring sensitive user data never trains or resides in external model contexts.
+- **Indirect Injection Mitigation**: Untrusted data retrieved by agents (e.g. web scraping, email body parsing) passes through the same intent and input filter pipeline to prevent data-triggered instruction overrides.
 
 ### 4.3 Reliability
-- **Circuit Breakers**: If the AI begins generating high volumes of erroneous or failing actions (hallucination loop), the Safeguard Engine trips a circuit breaker, automatically degrading to a "manual approval only" state.
-- **Asynchronous Decoupling**: The HITL Queue ensures that the AI Agent does not block or timeout while waiting for human authorization.
-- **Idempotency**: The Action Executor is designed to ensure that if a network failure occurs during execution, retries do not result in duplicated side effects.
+- **Graceful Fail-Safe Decoupling**: If the Prompt Injection or Intent Validation service fails or experiences high latency, the system defaults to a fail-closed posture or degrades to compulsory Human-in-the-Loop approval.
+- **Loop Circuit Breakers**: The rate limiter tracks agent execution depth and terminates recursive sub-task calls before exhaustion of system resources.
 
 ### 4.4 Performance Efficiency
-- **Just-in-Time Provisioning**: Using serverless containers or K8s Jobs ensures that execution environments are only spun up when an action passes all gateways, avoiding idle resource drain.
-- **Fast-Path Routing**: Deterministic policy checks (RBAC, Rate Limits) are cached in memory (e.g. Redis) allowing sub-millisecond validation for standard actions.
+- **Tiered Filtering Architecture**: Low-latency regex and fast ONNX-based micro-models process input filtering (Prompt Injection/PII) in under 15ms, preventing LLM invocation costs for malicious inputs.
+- **Asynchronous Tokenization**: PII substitution maps are cached locally per session to minimize database roundtrips during token swapping.
 
 ### 4.5 Cost Optimization
-- **Preventative Cost Controls**: By evaluating the payload *before* execution, the Safeguard Engine can block actions that would incur massive cloud or API costs (e.g. an AI accidentally spinning up 100 high-tier GPU instances).
-- **Serverless Compute**: Leveraging serverless components for the Ephemeral Sandbox scales to zero during idle periods, ensuring you only pay for executed actions.
+- **Short-Circuiting Malicious Prompts**: Blocking prompt injections and out-of-scope intents at the API Gateway layer avoids costly LLM inference overhead and token wastage.
+- **Serverless Sandboxing**: Compute for execution containers scales to zero when no actions are actively running.
 
 ### 4.6 Sustainability
-- **Compute Right-Sizing**: Sandbox environments are tailored with specific memory and CPU limits based on the payload (e.g. a simple API POST gets minimal resources), reducing energy waste.
-- **Batch Processing**: Non-urgent HITL approvals can be grouped and executed in batches during off-peak hours when the energy grid is operating at lower carbon intensity.
+- **Right-Sized Model Routing**: Small, specialized models are used for guardrail classification tasks (PII, injection detection, intent classification) rather than passing administrative guardrail checks through high-parameter, energy-intensive LLMs.
 
 ## 5. Technical Glossary
 
-- **Agentic AI**: Artificial Intelligence systems capable of not just answering questions, but planning and executing sequences of actions to achieve a goal.
-- **Blast Radius**: The maximum potential impact or damage that could occur if a specific component fails or if an action is executed maliciously/incorrectly.
-- **Circuit Breaker**: A design pattern that detects system failures and encapsulates the logic of preventing a failure from constantly recurring, during maintenance, temporary external system failure or unexpected system difficulties.
-- **Ephemeral Sandbox**: A temporary, isolated computing environment created specifically to execute a single task and then immediately destroyed, minimizing the attack surface.
-- **Human-in-the-Loop (HITL)**: A system design pattern that requires human interaction/approval before a process can proceed to the next step, acting as a manual fail-safe.
-- **Idempotency**: A property of an operation where applying it multiple times yields the same result as applying it once, crucial for safely retrying failed network requests.
-- **Policy Enforcement Point (PEP)**: A component in a Zero Trust architecture that intercepts requests to access a resource and makes an allow/deny decision based on evaluated policies.
-- **RBAC (Role-Based Access Control)**: A method of restricting network access based on the roles of individual users within an enterprise.
-- **WORM (Write-Once-Read-Many)**: A data storage technology that allows data to be written to a storage medium a single time and prevents the data from being erased or modified, heavily used for compliance and audit logging.
+- **Agentic AI**: AI systems capable of planning, reasoning, and executing multi-step workflows across external APIs on behalf of a user.
+- **Direct Prompt Injection**: An attack where a user inputs crafted instructions to bypass safety system prompts and hijack the AI’s behavior.
+- **Indirect Prompt Injection**: An attack where an AI processes untrusted external content (e.g., a malicious email or webpage) containing hidden instructions that hijack the AI's execution plan.
+- **Ephemeral Sandbox**: A temporary, isolated computing environment (e.g., container or microVM) provisioned strictly to execute a single action and self-destruct immediately after.
+- **Human-in-the-Loop (HITL)**: A safeguard pattern requiring explicit human authorization before executing actions classified as high-risk or irreversible.
+- **Intent Boundary Evaluator**: A semantic check verifying that the AI's formulated execution plan strictly aligns with the user's original request scope and authorized tasks.
+- **PII & Secrets Anonymization**: The process of detecting, redacting, or replacing Personally Identifiable Information and sensitive keys with non-sensitive surrogate tokens before sending payloads to LLM providers.
+- **Policy Enforcement Point (PEP)**: A central gateway component in Zero Trust systems that intercepts action payloads and evaluates them against authorization rules and risk metrics before granting execution access.
+- **Surrogate Tokenization**: Replacing sensitive data strings with unique, non-sensitive identifiers mapped securely in an isolated, encrypted token vault for later detokenization during execution.

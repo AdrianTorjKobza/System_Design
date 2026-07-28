@@ -55,7 +55,7 @@ Distributed tracing and AI-specific observability platforms are embedded across 
 The system embraces a Zero-Trust architecture, enforcing mutual TLS (mTLS) for internal microservices, including retrieval databases and agent endpoints. Robust Pre- and Post-Inference Guardrails act as a protective moat to sanitize inputs against adversarial prompt injections and prevent data exfiltration. Unique, short-lived service accounts isolate distinct AI agents dynamically.
 
 ### 4.3 Reliability
-Deployed in a multi-region, active-active topology, the architecture isolates fault domains. To handle unforeseen spikes in GPU capacity limits, the system implements graceful degradation—temporarily bypassing complex frontier models in favor of smaller, faster models—and utilizes smart request queueing or load-shedding to prevent cascading fleet failures.
+Deployed in a multi-region, active-active topology, the architecture isolates fault domains. To handle unforeseen spikes in GPU capacity limits, the system implements graceful degradation, temporarily bypassing complex frontier models in favor of smaller, faster models—and utilizes smart request queueing or load-shedding to prevent cascading fleet failures.
 
 ### 4.4 Performance Efficiency
 Traditional REST responses are unsuitable for LLMs; Server-Sent Events (SSE) drastically reduce perceived latency by delivering partial data sequentially. At the inference layer, moving from static batching to Continuous Batching eliminates pipeline bubbles. KV Prefix Caching accelerates system prompts common to millions of requests daily, eliminating redundant computation.

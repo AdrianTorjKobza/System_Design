@@ -1,7 +1,7 @@
 # ChatGPT High-Scale System Architecture
 
 ## 1. Architecture Overview
-The proposed architecture abstracts the complexities of stateful Large Language Model (LLM) inference, scaling to support millions of concurrent users. It utilizes a modular, distributed microservices pattern encompassing a resilient Edge network, an Orchestration & Stateful Logic Tier, a Pre/Post Safety Guardrail Layer, and an optimized GPU Inference Fleet. The system handles autoregressive generation bottlenecks using Server-Sent Events (SSE) for perceived zero-latency streaming and leverages advanced infrastructure techniques—such as Continuous Batching, PagedAttention, and Speculative Decoding, to maximize GPU cluster utilization and throughput. 
+The proposed architecture abstracts the complexities of stateful Large Language Model (LLM) inference, scaling to support millions of concurrent users. It utilizes a modular, distributed microservices pattern encompassing a resilient Edge network, an Orchestration & Stateful Logic Tier, a Pre/Post Safety Guardrail Layer, and an optimized GPU Inference Fleet. The system handles autoregressive generation bottlenecks using Server-Sent Events (SSE) for perceived zero-latency streaming and leverages advanced infrastructure techniques, such as Continuous Batching, PagedAttention, and Speculative Decoding, to maximize GPU cluster utilization and throughput. 
 
 ## 2. Architecture Diagram
 

@@ -1,95 +1,97 @@
-# Distributed Real-Time Collaborative Document Editing Architecture
+# Real-Time Collaborative Document Editor Architecture
 
 ## 1. Architecture Overview
-This solution proposes a cloud-agnostic, microservices-based architecture to support a real-time collaborative document editing platform similar to Google Docs. The architecture utilizes WebSockets for low-latency, bidirectional communication between clients and the server. To handle concurrent edits without conflicts, it employs Operational Transformation (OT) or Conflict-free Replicated Data Types (CRDTs) managed by dedicated backend workers. State is decoupled from the connection layer using a high-throughput message broker, ensuring horizontal scalability. Persistent storage relies on a combination of a fast in-memory cache for active document sessions, a document-oriented or relational database for historical data and metadata, and an object storage system for media attachments. The entire workload is containerized and orchestrated via Kubernetes.
+The proposed solution is a cloud-agnostic, microservices-based architecture designed to support high-concurrency, real-time document collaboration. The system leverages Operational Transformation (OT) or Conflict-free Replicated Data Types (CRDTs) to resolve concurrent edits. It employs a polyglot persistence strategy: a Relational Database for rigid transactional data (users, document metadata, permissions), an in-memory datastore for active real-time sessions, an append-only NoSQL database for the document event ledger (keystrokes/operations), and Object Storage for compiled document snapshots. Real-time communication is facilitated by WebSockets, with an event-driven message broker decoupling heavy background tasks like search indexing and periodic snapshotting.
 
 ## 2. Architecture Diagram
 
 ```mermaid
-flowchart TD
-    subgraph Client Layer
-        Web[Web Browser]
-        Mobile[Mobile Application]
-    end
+graph TD
+    %% User Edge
+    Client[Web/Mobile Client] --> CDN[CDN / Edge Network]
+    CDN --> WAF[Web Application Firewall]
+    WAF --> APIGW[API Gateway / Load Balancer]
 
-    subgraph Edge Layer
-        CDN[CDN / Edge Cache]
-        WAF[Web Application Firewall]
-        LB[Global Load Balancer]
-    end
+    %% Synchronous Services
+    APIGW --> Auth[Authentication & Authorization Service]
+    APIGW --> DocAPI[Document Metadata Service]
+    APIGW --> WSG[WebSocket Gateway]
 
-    subgraph API & Routing
-        API_GW[API Gateway / Ingress]
-    end
-
-    subgraph Microservices [Stateless Compute]
-        Auth[Auth & Identity Service]
-        DocMan[Document Management Service]
-        WS[WebSocket / Connection Service]
-        Collab[Collaboration & Sync Workers]
-    end
-
-    subgraph Data & Messaging Layer [Stateful]
-        Kafka[Message Broker / Kafka]
-        Redis[In-Memory Cache / Redis Cluster]
-        DB[(Primary DB / PostgreSQL or MongoDB)]
-        Blob[Object Storage / MinIO or S3-API]
-    end
-
-    Web & Mobile --> CDN
-    Web & Mobile --> WAF
-    WAF --> LB
-    LB --> API_GW
-
-    API_GW --> Auth
-    API_GW --> DocMan
-    API_GW --> WS
-
-    WS <-->|Bidirectional Sync| Web
-    WS <-->|Bidirectional Sync| Mobile
-
-    WS -->|Publish Deltas| Kafka
-    Kafka -->|Consume Deltas| Collab
-
-    Collab <-->|Resolve Conflicts & State| Redis
-    Collab -->|Async Persistence| DB
+    %% Real-time Collaboration Core
+    WSG <--> Collab[Collaboration & Sync Service]
+    Collab <--> Redis[(Redis: Active Doc State & Pub/Sub)]
+    Collab --> OpsDB[(Cassandra: Append-Only Ops/Ledger)]
     
-    DocMan --> DB
-    DocMan --> Blob
+    %% Async Event Driven Core
+    Collab --> Kafka[Message Broker: Kafka]
+    DocAPI --> Kafka
+
+    %% Background Workers
+    Kafka --> SnapshotWorker[Snapshot & Archival Worker]
+    Kafka --> SearchIndexer[Search Indexing Worker]
+    Kafka --> NotificationWorker[Notification Service]
+
+    %% Persistence Layer
+    Auth --> RDBMS[(PostgreSQL: Users & ACLs)]
+    DocAPI --> RDBMS
+    SearchIndexer --> Elastic[(Elasticsearch: Search Index)]
+    SnapshotWorker --> Blob[(Object Storage: Snapshots & Exports)]
 ```
 
-## 3. Well-Architected Framework Analysis
+## 3. End-to-End System Flow
 
-*   **Operational Excellence:**
-    *   **Observability:** The system uses a centralized observability stack (e.g. Prometheus for metrics, Grafana for visualization, Jaeger for distributed tracing, and ELK/Fluentd for log aggregation) to monitor WebSocket connection drops, API latency, and OT/CRDT resolution times.
-    *   **Deployment:** Infrastructure as Code (IaC) via Terraform and GitOps practices (using ArgoCD or Flux) ensure repeatable, automated, and safe Kubernetes deployments. 
+1. **Authentication and Access**: The user authenticates via the API Gateway to the Auth Service. Upon success, a JWT is returned. When the user requests a document, the Document Metadata Service checks Role-Based Access Control (RBAC) in PostgreSQL to ensure the user has read/write permissions.
+2. **Document Initialization**: The client fetches the latest compiled document snapshot from Object Storage and the trailing uncompiled operations from the NoSQL ledger (Cassandra). The local editor renders the document.
+3. **Establishing Real-Time Connection**: The client upgrades its connection to a WebSocket via the WebSocket Gateway, which routes the connection to the specific Collaboration Service node handling that document's active session (tracked via Redis).
+4. **Collaborative Editing**: As the user types, lightweight operation payloads (OT/CRDT) are sent over the WebSocket. The Collaboration Service applies conflict resolution, updates the active document state in Redis, and broadcasts the accepted operations to all other connected clients viewing the same document via Redis Pub/Sub.
+5. **Persistence and Ledgering**: Accepted operations are asynchronously flushed to the append-only Cassandra datastore, creating an immutable history of edits.
+6. **Background Processing**: Operations and document metadata updates are published to Kafka. 
+   - The **Snapshot Worker** consumes these events, periodically collapsing operations into a new static snapshot stored in Object Storage to speed up future loading times.
+   - The **Search Indexer** updates Elasticsearch to ensure document text is immediately searchable.
+   - The **Notification Service** alerts offline users if they are tagged in a comment.
 
-*   **Security:**
-    *   **Identity & Access Management:** User authentication is handled via OIDC/OAuth2 protocols. A Role-Based Access Control (RBAC) model enforces permissions (Viewer, Commenter, Editor, Owner) at the API Gateway level before requests reach the Document Management Service.
-    *   **Data Protection:** Data is encrypted in transit using TLS 1.3. Data at rest (in the Primary DB and Object Storage) is encrypted using AES-256 with rotation-managed keys (e.g. HashiCorp Vault). A WAF protects against DDoS and OWASP top 10 threats.
+## 4. Well-Architected Framework Analysis
 
-*   **Reliability:**
-    *   **Resiliency:** The WebSocket Service is stateless regarding document data; it solely manages connections. If a node fails, clients seamlessly reconnect to another node. 
-    *   **High Availability:** Active-Active multi-zone Kubernetes clusters ensure fault tolerance. The Primary DB uses read replicas for high-availability reads, and Kafka ensures no dropped edits (deltas) during sudden traffic spikes or worker node failures.
+### 4.1 Operational Excellence
+- **Infrastructure as Code (IaC)**: Use Terraform/Pulumi for reproducible, version-controlled infrastructure provisioning.
+- **Observability**: Implement distributed tracing (OpenTelemetry) across the API Gateway, WebSocket connections, and microservices. Aggregate logs into an ELK stack or similar (Fluentd, Elasticsearch, Kibana) and metrics into Prometheus/Grafana.
+- **CI/CD**: Fully automated deployment pipelines with blue-green or canary deployments to ensure zero-downtime updates, particularly crucial for persistent WebSocket connections.
 
-*   **Performance Efficiency:**
-    *   **Latency Minimization:** Static assets (UI, fonts) are cached at the Edge via CDN. Real-time document updates bypass HTTP polling in favor of WebSockets. 
-    *   **State Management:** Active documents are loaded into Redis. Collaboration Workers apply deltas in-memory to provide sub-millisecond response times, subsequently batch-flushing changes to the persistent Primary DB asynchronously.
+### 4.2 Security
+- **Edge Security**: WAF to mitigate DDoS attacks, SQL injection, and XSS. Terminate TLS 1.3 at the API Gateway.
+- **Data Protection**: AES-256 encryption at rest for all databases and object storage. TLS for all data in transit (internally and externally).
+- **Identity & Access**: Stateless JWT authentication with strict expiration. Granular, row-level RBAC for document access enforcement within the Metadata Service.
+- **Input Validation**: Strict sanitization of WebSocket payloads to prevent malicious code execution within the collaborative environment.
 
-*   **Cost Optimization:**
-    *   **Elasticity:** Using Horizontal Pod Autoscalers (HPA) in Kubernetes allows the WebSocket and Collaboration services to scale up during peak working hours and scale down to near-zero during off-peak times.
-    *   **Storage Tiering:** Object storage lifecycle policies automatically transition inactive media attachments and older document revisions to cold storage, significantly reducing long-term storage costs.
+### 4.3 Reliability
+- **Fault Tolerance**: Multi-AZ deployments for all services. If a Collaboration Service node fails, clients seamlessly reconnect to a new node, which restores the active session state from Redis and Cassandra.
+- **Circuit Breakers**: Implement circuit breakers (e.g. via Istio or application-level libraries) to prevent cascading failures if secondary systems (like the search indexer) go offline.
+- **Event-Driven Resilience**: Kafka ensures that bursts of edits are safely queued, preventing downstream databases from being overwhelmed during peak traffic.
 
-*   **Sustainability:**
-    *   **Compute Efficiency:** By utilizing lightweight container orchestration and binary communication protocols (like Protobuf or MessagePack) over WebSockets, the architecture minimizes network payload sizes and CPU cycles compared to verbose JSON polling.
-    *   **Resource Packing:** Kubernetes auto-scaling optimizes node density, ensuring compute resources are not over-provisioned and sitting idle, thereby reducing the overall carbon footprint of the cluster.
+### 4.4 Performance Efficiency
+- **Low Latency Transport**: WebSockets provide a persistent, low-overhead bidirectional channel essential for feeling "real-time."
+- **In-Memory State**: Redis is utilized as a high-speed data structure store to maintain active document states and route messages, completely bypassing disk I/O for real-time keystroke replication.
+- **Geographic Proximity**: A CDN caches static assets. Edge-optimized routing directs users to the nearest regional API/WebSocket Gateway.
 
-## 4. Technical Glossary
+### 4.5 Cost Optimization
+- **Tiered Storage**: Automatically transition older document snapshots in Object Storage to colder, cheaper storage tiers (e.g. Glacier equivalents).
+- **Compute Sizing**: Utilize Spot Instances or preemptible VMs for stateless, asynchronous background workers (Snapshot, Search, Notification) since they handle fault-tolerant Kafka workloads.
+- **Right-Sizing Persistence**: Using Cassandra for append-only operations and Object Storage for bulk text is significantly cheaper at scale than storing millions of edits in a traditional Relational Database.
 
-*   **CRDT (Conflict-free Replicated Data Type):** A data structure that allows multiple users to make changes locally and merge them over a network independently, guaranteeing eventual consistency without needing a centralized conflict-resolution server.
-*   **OT (Operational Transformation):** An algorithm used in collaborative systems (originally in Google Docs) to resolve conflicts when multiple users edit the same text simultaneously, transforming operations based on the state of the document so intentions are preserved.
-*   **WebSocket:** A computer communications protocol providing full-duplex, persistent communication channels over a single TCP connection, ideal for real-time collaboration.
-*   **API Gateway:** A server that acts as an API front-end, receiving API requests, enforcing throttling and security policies, passing requests to the back-end service, and then passing the response back to the requester.
-*   **Message Broker (e.g., Kafka):** An intermediary computer program that translates a message from the formal messaging protocol of the sender to the formal messaging protocol of the receiver; used here to decouple fast incoming keystrokes from backend processing.
-*   **OIDC (OpenID Connect):** An identity layer on top of the OAuth 2.0 protocol that allows clients to verify the identity of the end-user based on the authentication performed by an authorization server.
-*   **Deltas:** A generic term for the incremental changes or operations applied to a document (e.g., "insert 'a' at index 5"), rather than sending the entire document state back and forth.
+### 4.6 Sustainability
+- **Elastic Auto-Scaling**: Aggressively scale down WebSocket and Collaboration nodes during off-peak hours based on active connection counts.
+- **Efficient Architecture**: Polyglot persistence avoids taxing a monolithic database with the wrong type of workload. By coalescing keystrokes in memory before writing to disk, we drastically reduce I/O power consumption.
+- **Processor Choice**: Where supported by the cloud provider, deploy workloads on ARM-based processors to improve performance-per-watt efficiency.
+
+## 5. Technical Glossary
+
+- **Operational Transformation (OT) / Conflict-free Replicated Data Type (CRDT)**: Algorithms used to handle and resolve concurrent modifications to a shared document by multiple users without locking the document.
+- **WebSocket**: A communications protocol providing full-duplex communication channels over a single TCP connection, ideal for real-time applications.
+- **Polyglot Persistence**: The practice of using different database technologies to handle different data storage needs within a single software application (e.g. SQL for relational data, NoSQL for high-velocity logs, Redis for caching).
+- **JWT (JSON Web Token)**: A compact, URL-safe means of representing claims to be transferred between two parties, commonly used for stateless authentication.
+- **API Gateway**: A server that acts as an API front-end, receiving API requests, enforcing throttling and security policies, passing requests to the back-end service, and then passing the response back to the requester.
+- **Pub/Sub (Publish/Subscribe)**: A messaging pattern where senders (publishers) categorize messages into classes without knowledge of which subscribers will receive them.
+- **Message Broker (Kafka)**: A distributed event streaming platform used to handle high-throughput, asynchronous data pipelines and decoupled service communication.
+- **CDN (Content Delivery Network)**: A geographically distributed network of proxy servers and their data centers, providing high availability and performance by distributing the service spatially relative to end-users.
+- **RBAC (Role-Based Access Control)**: An approach to restricting system access to authorized users based on their assigned roles (e.g. Viewer, Commenter, Editor, Owner).
+- **WAF (Web Application Firewall)**: A specific form of application firewall that filters, monitors, and blocks HTTP traffic to and from a web application, protecting against common web exploits.

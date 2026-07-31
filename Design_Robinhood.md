@@ -11,8 +11,6 @@ This architecture specifies a high-performance, cloud-agnostic, microservices-ba
 * **Sub-Millisecond Real-Time Streaming:** Combines direct exchange feeds, time-series data storage, Redis caching, and horizontally scalable WebSocket gateway layers to stream ticker quotes to millions of concurrent client connections.
 * **Zero-Trust Security & Compliance:** Integrates mutual TLS (mTLS), hardware security modules (HSM) for cryptographic keys, OAuth2/OIDC, continuous automated audit logging, and automated KYC/AML ingestion pipelines.
 
----
-
 ## 2. Architecture Diagram
 
 ```mermaid
@@ -100,8 +98,6 @@ flowchart TD
     PortfolioSvc --> TickerCache
 ```
 
----
-
 ## 3. End-to-End System Flow
 
 ### Phase 1: Real-Time Market Data Ingestion & Distribution
@@ -131,8 +127,6 @@ flowchart TD
    * Inserts debit/credit balancing rows into the double-entry accounting ledger.
 4. **Client Notification:** A settlement notification is emitted via WebSocket to update the user's UI with the updated portfolio balance and execution receipt.
 5. **Audit Archiving:** The event is asynchronously stored in the `Data Lake` for end-of-day reconciliation and regulatory compliance reporting (e.g. CAT/OATS reporting).
-
----
 
 ## 4. Well-Architected Framework Analysis
 
@@ -166,8 +160,6 @@ flowchart TD
 ### 4.6 Sustainability
 * **ARM-Based Compute Workloads:** Microservices and database nodes are deployed on ARM64-based processors (e.g. AWS Graviton, Ampere Altra), offering up to 40% better performance per watt compared to legacy x86 architectures.
 * **Resource Minimization:** Compiled runtime environments (Go, Rust, C++) are utilized for high-throughput components (FIX engine, market data ingestion) to maximize CPU cycle efficiency and decrease carbon footprint.
-
----
 
 ## 5. Technical Glossary
 

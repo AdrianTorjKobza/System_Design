@@ -1,7 +1,5 @@
 # Production-Ready Batch Inference API for a GPU Cluster
 
----
-
 ## 1. Architecture Overview
 
 This architecture defines a cloud-agnostic, enterprise-grade Batch Inference API designed to orchestrate asynchronous, high-throughput machine learning inference across a distributed GPU cluster. By decoupling request ingestion from GPU execution using an asynchronous message broker and autoscaling event-driven workers, the platform eliminates GPU idle time, prevents out-of-memory (OOM) bottlenecks, and maximizes throughput for large-scale data workloads (e.g. LLM batch generation, bulk image processing, or offline embeddings).
@@ -12,8 +10,6 @@ The system consists of five core layers:
 3. **Storage Layer:** High-throughput, S3-compatible object storage for input payloads, model weights, and inference artifacts.
 4. **Compute & Orchestration Layer:** Kubernetes-managed GPU worker pods scaled dynamically via event-driven autoscaling (KEDA) based on queue depth.
 5. **Inference Runtime Layer:** Optimized inference servers (e.g. Triton Inference Server, vLLM, or TensorRT-LLM) supporting continuous batching, model parallelism, and hardware acceleration.
-
----
 
 ## 2. Architecture Diagram
 
@@ -69,8 +65,6 @@ flowchart TB
     W1 & W2 & WN -->|Error / Retry Max| DLQ
 ```
 
----
-
 ## 3. End-to-End System Flow
 
 1. **Job Submission (Ingestion):**
@@ -98,8 +92,6 @@ flowchart TB
 
 6. **Result Retrieval:**
    * The client polls `GET /v1/batch/jobs/{id}` to inspect status or receives an asynchronous HTTP POST webhook notification containing the pre-signed download URL for the final output artifacts.
-
----
 
 ## 4. Well-Architected Framework Analysis
 
@@ -132,8 +124,6 @@ flowchart TB
 * **Carbon-Aware Scheduling:** Integrate carbon-intensity schedulers to defer non-time-critical batch inference jobs to windows of high renewable energy availability on the regional grid.
 * **Energy-Efficient Hardware Utilization:** Maximize GPU utilization metrics via batching; running a single GPU at 95% SM occupancy consumes significantly less energy per inference token than running four underutilized GPUs at 25% occupancy.
 * **Model Optimization:** Adopt model pruning and distilled architectures to minimize the computational floating-point operations (FLOPs) required per inference pass.
-
----
 
 ## 5. Technical Glossary
 

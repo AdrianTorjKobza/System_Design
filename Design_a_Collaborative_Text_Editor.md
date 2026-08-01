@@ -75,7 +75,7 @@ flowchart TB
 
 ### Phase 1: Authentication & Document Initialization
 1. **User Request:** The client navigates to a document URL. Static assets (frontend UI, WebAssembly/JS CRDT runtime) are served from the **CDN**.
-2. **Access Verification:** The client sends an HTTP request with its authorization bearer token to the **API Gateway**. The gateway routes this to the **Auth & Identity Service** and **Document Management Service** to validate identity and confirm the user's Role-Based Access Control (RBAC) permissions (e.g., Editor vs. Viewer).
+2. **Access Verification:** The client sends an HTTP request with its authorization bearer token to the **API Gateway**. The gateway routes this to the **Auth & Identity Service** and **Document Management Service** to validate identity and confirm the user's Role-Based Access Control (RBAC) permissions (e.g. Editor vs. Viewer).
 3. **Initial State Fetch:** Upon successful authorization, the client retrieves the latest compacted document snapshot and pending mutation logs from the **Document Management Service** (fetching from the **Hot Snapshot Store**).
 4. **Local Hydration:** The client's local CRDT engine initializes the document state in memory, allowing immediate visual rendering and zero-latency local editing.
 

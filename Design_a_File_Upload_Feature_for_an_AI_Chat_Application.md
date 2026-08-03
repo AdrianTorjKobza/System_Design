@@ -4,7 +4,7 @@
 
 This architectural proposal defines a **cloud-agnostic, event-driven microservices platform** for securely ingesting, processing, and vectorizing user-uploaded files (PDFs, spreadsheets, images, and plain text documents) within an enterprise AI Chat application. 
 
-#### Core Objectives
+#### Core Objectives:
 *   **Zero-Bottleneck Uploads:** Offload binary data transfers from backend application servers by utilizing ephemeral **Pre-Signed URLs** for direct-to-object-storage uploads.
 *   **Asynchronous Document Processing:** Decouple file ingestion from the synchronous chat flow using an event-driven message broker to handle OCR, text extraction, chunking, and vector embedding generation without blocking UI responsiveness.
 *   **Enterprise Security & Compliance:** Enforce rigorous perimeter defense through automated malware scanning, strict tenant isolation, and end-to-end encryption.

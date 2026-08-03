@@ -93,8 +93,6 @@ graph TB
     *   The worker marks the file status as `READY` in the **Relational DB** and publishes a `FileProcessed` event.
     *   The **File Management Service** relays this state change to the client over an established **SSE/WebSocket** connection. The file icon in the chat changes from "Processing" to "Ready," and subsequent user prompts can immediately query the document via RAG.
 
----
-
 ## 4. Well-Architected Framework Analysis
 
 ### 4.1 Operational Excellence

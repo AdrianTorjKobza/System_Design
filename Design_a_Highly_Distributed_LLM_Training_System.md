@@ -1,7 +1,7 @@
 # Highly Distributed LLM Training System Architecture
 
 ## 1. Architecture Overview
-Training Large Language Models (LLMs) at scale—spanning tens to hundreds of billions of parameters—requires a highly optimized, cloud-agnostic High-Performance Computing (HPC) architecture. Unlike traditional web microservices, distributed training workloads are **tightly coupled** and strictly constrained by interconnect latency, memory bandwidth, and aggregate compute availability.
+Training Large Language Models (LLMs) at scale (spanning tens to hundreds of billions of parameters) requires a highly optimized, cloud-agnostic High-Performance Computing (HPC) architecture. Unlike traditional web microservices, distributed training workloads are **tightly coupled** and strictly constrained by interconnect latency, memory bandwidth, and aggregate compute availability.
 
 This architecture decouples the training lifecycle into four modular tiers: **Data Preparation & Ingestion**, **Control & Orchestration**, **High-Performance Compute (HPC) Fabric**, and **Storage & Checkpoint Resiliency**. Leveraging standard enterprise open-source patterns (Kubernetes with Volcano/KubeRay, PyTorch FSDP/Megatron-LM, and asynchronous multi-tiered storage), this design achieves high Model Flop Utilization (**MFU > 55%**) while providing automated fault tolerance for long-running training jobs across thousands of accelerators.
 
@@ -67,7 +67,7 @@ graph TB
 
 2. **Job Submission & Gang Scheduling:**
    * An ML Engineer submits a declarative PyTorch/Megatron-LM training job specification to the Kubernetes API.
-   * The **Volcano Gang Scheduler** evaluates aggregate cluster capacity. It enforces **all-or-nothing scheduling**—the job is only provisioned when the exact number of required GPUs and network topology constraints are simultaneously available, preventing partial scheduling deadlocks.
+   * The **Volcano Gang Scheduler** evaluates aggregate cluster capacity. It enforces **all-or-nothing scheduling**. The job is only provisioned when the exact number of required GPUs and network topology constraints are simultaneously available, preventing partial scheduling deadlocks.
 
 3. **Multi-Dimensional Parallel Initialization:**
    * The training operator initializes worker pods across compute nodes.

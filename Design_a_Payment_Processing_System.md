@@ -46,7 +46,7 @@ Here is the step-by-step journey of a payment request from the moment a user cli
 3. **Security & Fraud Check:** The Payment Service asks the **Tokenization Service** to retrieve the actual credit card details (which are never stored in our main databases to minimize security risks). Simultaneously, it asks the **Fraud & Risk Service** to score the transaction. If it looks suspicious, it is rejected immediately.
 4. **The Money Move:** The Payment Service reaches out to an **External Payment Gateway** to authorize and capture the funds.
 5. **The Financial Record:** Once approved, the Payment Service saves the "Success" state in its database and commands the **Ledger Service** to record the movement of money. We use a strict relational database (PostgreSQL) here because it guarantees the math always balances perfectly.
-6. **Post-Payment Cleanup:** The Payment Service drops a "Payment Successful" message into a **Message Broker**. This acts like a post office. The **Notification Service** picks up the message to email a receipt, while the **Reconciliation Service** logs it for accounting—all happening in the background so the user's checkout completes instantly.
+6. **Post-Payment Cleanup:** The Payment Service drops a "Payment Successful" message into a **Message Broker**. This acts like a post office. The **Notification Service** picks up the message to email a receipt, while the **Reconciliation Service** logs it for accounting, all happening in the background so the user's checkout completes instantly.
 
 ## 4. Well-Architected Framework Analysis
 

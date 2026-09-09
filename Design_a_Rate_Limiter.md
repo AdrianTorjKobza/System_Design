@@ -47,7 +47,7 @@ The rate limiter is our first line of defense against Denial of Service (DDoS) a
 If the Rate Limiter service crashes, we design the system to "fail-open." This means if the API Gateway cannot reach the Rate Limiter, it will temporarily let all traffic through rather than blocking entirely. It is better to risk a slightly heavier load on the backend for a few minutes than to accidentally block all legitimate paying customers while the system restarts. 
 
 ### 4.4 Performance Efficiency
-Rate limiting must be incredibly fast—adding more than 10-20 milliseconds to a request is unacceptable. We achieve this by using Redis (which lives in RAM, not on slow hard drives) and keeping the rate limiting rules cached directly in the service. The system is designed to scale out horizontally: as traffic grows, we can simply add more Rate Limiter service copies.
+Rate limiting must be incredibly fast; adding more than 10-20 milliseconds to a request is unacceptable. We achieve this by using Redis (which lives in RAM, not on slow hard drives) and keeping the rate limiting rules cached directly in the service. The system is designed to scale out horizontally: as traffic grows, we can simply add more Rate Limiter service copies.
 
 ### 4.5 Cost Optimization
 By catching and dropping excess traffic at the front door, we save money. We don't have to pay for the CPU, memory, and database processing power that would otherwise be wasted processing abusive or out-of-tier requests. Additionally, we set expiration timers (Time-To-Live) on the Redis data, so old tallies automatically delete themselves, keeping our memory storage small and cheap.

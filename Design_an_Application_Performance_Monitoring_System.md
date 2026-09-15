@@ -1,7 +1,7 @@
 # Enterprise Application Performance Monitoring (APM) System
 
 ## 1. Architecture Overview
-This Application Performance Monitoring (APM) system acts as the "nervous system" for your software environment. Its primary goal is to collect health and performance data—specifically metrics, logs, and traces—from all your running applications. By centralizing this data, engineering teams can see exactly what is happening in real-time, diagnose bugs faster, and prevent minor issues from turning into full system outages. 
+This Application Performance Monitoring (APM) system acts as the "nervous system" for your software environment. Its primary goal is to collect health and performance data, specifically metrics, logs, and traces, from all your running applications. By centralizing this data, engineering teams can see exactly what is happening in real-time, diagnose bugs faster, and prevent minor issues from turning into full system outages. 
 
 We are using a **cloud-agnostic microservices architecture**. This means the system can be deployed on AWS, Google Cloud, Azure, or your own private data centers without changing the core design. We separate the tasks of collecting, buffering, analyzing, and storing data so that the monitoring system itself remains fast and reliable, even when dealing with massive spikes in traffic.
 

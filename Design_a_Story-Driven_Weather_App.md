@@ -1,0 +1,57 @@
+#  Story-Driven Weather Application Architecture
+
+## 1. Architecture Overview
+This architecture supports a "Story-Driven Weather App", an application that takes boring, standard weather forecasts and uses Artificial Intelligence to turn them into engaging, short narratives (e.g. turning "Rain, 15°C" into a localized, moody detective story). 
+
+To build this, we are using a **cloud-agnostic microservices architecture**. This means the system is broken down into small, independent pieces (services) that can run on any major cloud provider (AWS, Google Cloud, or Azure). We chose this approach because it allows the app to scale easily if it goes viral, and it keeps the weather-fetching logic completely separate from the AI story-generation logic, making the system easier for our teams to update and maintain.
+
+## 2. Architecture Diagram
+
+```mermaid
+flowchart TD
+    Client[Mobile/Web App] -->|Requests Weather Story| Gateway[API Gateway]
+    
+    subgraph Microservices Cluster
+        Gateway -->|Manages profiles| UserSvc[User Service]
+        Gateway -->|Coordinates story| StorySvc[Story Service]
+        Gateway -->|Gets raw forecast| WeatherSvc[Weather Service]
+    end
+    
+    UserSvc -->|Saves settings| DB[(Relational Database)]
+    StorySvc -->|1. Asks for weather| WeatherSvc
+    WeatherSvc -->|2. Fetches current data| ExtWeather[3rd Party Weather API]
+    
+    StorySvc -->|3. Checks for saved story| Cache[(In-Memory Cache)]
+    StorySvc -->|4. Creates new story| ExtAI[External AI Provider]
+    
+    classDef external fill:#f9f,stroke:#333,stroke-width:2px;
+    class ExtWeather,ExtAI external;
+```
+
+## 3. End-to-End System Flow
+Here is the step-by-step journey of what happens when a user opens the app:
+
+1. **The Request:** The user opens the app, which securely sends a request including their current location to our **API Gateway**. Think of the gateway as the front desk receptionist; it checks their identity and routes them to the right place.
+2. **Checking Preferences:** The gateway talks to the **User Service** to load the user's preferred story genre (e.g. sci-fi, fantasy, romance) from our database.
+3. **Getting the Weather:** The **Story Service** takes over and asks the **Weather Service** for the local forecast. The Weather Service quickly grabs the real-time data (like temperature, humidity, and wind) from an external weather provider.
+4. **Checking the Cache (The Shortcut):** Before asking the AI to write a brand new story, the Story Service checks our **Cache** (a super-fast temporary memory). It asks: *"Have we already written a sci-fi story for rainy, 15°C weather in London in the last hour?"* 
+5. **Generating the Story:** 
+   - *If yes:* It instantly returns the cached story to the user.
+   - *If no:* It sends the weather data and genre to an **External AI Provider** (like OpenAI or Anthropic) to write a new short story. It then saves this new story in the cache for the next person in that city.
+6. **The Delivery:** The custom, weather-based story is sent back down the chain and pops up on the user's screen.
+
+## 4. Well-Architected Framework Analysis
+
+- **4.1 Operational Excellence:** We will package our microservices in containers (using Docker) and manage them with Kubernetes. This allows developers to push updates to the Weather Service without breaking the Story Service. Centralized logging will track how long stories take to generate so we can easily spot and fix slowdowns.
+- **4.2 Security:** All data traveling between the user and our servers is encrypted. API keys for the expensive external AI and weather providers are kept in a secure "vault" so they are never exposed in our code. Users are authenticated before they can request stories.
+- **4.3 Reliability:** If the External AI Provider goes down, the app won't crash. Instead, the Story Service is designed with a "fallback" mechanism that will return pre-written, generic weather stories (e.g. "It's raining outside, grab an umbrella") so the user always sees something.
+- **4.4 Performance Efficiency:** The API Gateway and Microservices can automatically duplicate themselves (scale out) during traffic spikes—like during a major snowstorm when everyone checks the weather. 
+- **4.5 Cost Optimization:** AI generation can be expensive. By heavily relying on the **Cache**, we ensure that if 10,000 users in New York check the weather during a sunny afternoon, we only pay the AI to generate the "Sunny New York" story once, serving the saved copy to the other 9,999 users.
+- **4.6 Sustainability:** Because we cache heavily and scale down our servers at night when fewer people check the weather, we avoid leaving unused servers running, significantly reducing the carbon footprint of our computing infrastructure.
+
+## 5. Technical Glossary
+- **Microservices:** A way of building software where the app is split into small, independent parts that communicate with each other, rather than one giant, tangled program.
+- **API Gateway:** The single entry point for all app traffic. It acts like a traffic cop, directing user requests to the correct internal service.
+- **Cache (In-Memory Cache):** A very fast storage system (often using a tool called Redis) that remembers recent requests. It’s like keeping a document on your desk instead of filing it away in a cabinet.
+- **External AI Provider:** A third-party company (like OpenAI) that hosts the Large Language Models (LLMs) used to actually write the creative text.
+- **Relational Database:** A traditional database (like PostgreSQL) that organizes data into neat tables. We use it here to safely store permanent data, like user accounts and saved settings.

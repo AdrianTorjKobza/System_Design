@@ -1,4 +1,4 @@
-## 0. Architecture Proposal: Story-Driven Weather Application
+# Architecture Proposal: Story-Driven Weather Application
 
 ## 1. Architecture Overview
 This architecture supports a "Story-Driven Weather App"—an application that takes boring, standard weather forecasts and uses Artificial Intelligence to turn them into engaging, short narratives (e.g. turning "Rain, 15°C" into a localized, moody detective story). 

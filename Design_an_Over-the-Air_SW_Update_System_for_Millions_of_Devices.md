@@ -1,7 +1,7 @@
 # Over-the-Air (OTA) Software Update Architecture for Mass-Scale Devices
 
 ## 1. Architecture Overview
-This solution provides a way to safely update millions of connected devices—such as smart thermostats, sensors, or vehicles—over the internet. 
+This solution provides a way to safely update millions of connected devices (such as smart thermostats, sensors, or vehicles) over the internet. 
 
 When you send a large software file to millions of devices at once, you risk crashing your servers or instantly breaking your entire fleet if the new software has a bug. To solve this, our design uses **phased rollouts**. This means we update a small percentage of devices first to verify the software is safe before sending it to everyone else. We also use **edge caching**, which places the heavy update files on servers geographically closer to the devices. This keeps downloads fast and prevents our main databases from being overwhelmed. We rely on independent, cloud-agnostic microservices so that if one part of the system fails, the rest keeps running smoothly.
 

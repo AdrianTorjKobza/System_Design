@@ -1,80 +1,62 @@
-# Distributed Compute Resource Allocation Architecture
+# Distributed Compute Allocation and Prioritization Engine
 
 ## 1. Architecture Overview
+When multiple engineering projects compete for the same computing hardware, you need a system that acts like a smart traffic controller. This architecture provides a centralized, cloud-agnostic platform to receive computing tasks, rank them by business urgency, and automatically assign them to the most appropriate hardware. 
 
-This architecture provides a scalable, cloud-agnostic solution for dynamically prioritizing and allocating distributed compute resources across multiple concurrent projects. Leveraging a container orchestration platform (Kubernetes) augmented by an advanced batch scheduling and queueing system (such as Kueue or Apache YuniKorn), the system ensures multi-tenant fairness, strict quota management, and hierarchical workload prioritization. It intelligently scales underlying infrastructure in real-time, utilizing automated bin-packing and preemptible compute nodes to maximize throughput while preventing resource starvation for high-priority initiatives.
+Instead of a chaotic "first-come, first-served" model that might delay critical workloads, this microservices-based solution places jobs in a priority waiting line. It constantly monitors your available cloud servers and edge devices, ensuring the most important work gets processed fastest while utilizing your hardware efficiently.
 
 ## 2. Architecture Diagram
 
 ```mermaid
 flowchart TD
-    subgraph "Clients & API"
-        P1[Project A Workloads] -->|High Priority| API[API Gateway / Ingress]
-        P2[Project B Workloads] -->|Medium Priority| API
-        P3[Project C Workloads] -->|Low Priority| API
-    end
-
-    subgraph "Control Plane (Orchestration & Policy)"
-        API --> K8sAPI[Kubernetes API Server]
-        K8sAPI --> QueueManager[Job Queues & Quota Manager]
-        QueueManager --> Scheduler[Advanced Scheduler]
-        
-        PolicyEngine[Policy Engine / OPA] -.->|Enforce Quotas| K8sAPI
-        GitOps[GitOps Controller] -.->|Sync Quotas & Priorities| QueueManager
-    end
-
-    subgraph "Compute Layer (Worker Nodes)"
-        Scheduler --> NG1[On-Demand Node Group]
-        Scheduler --> NG2[Spot / Preemptible Node Group]
-        Scheduler --> NG3[GPU / Specialized Node Group]
-    end
-
-    subgraph "Autoscaling & Observability"
-        Metrics[Prometheus Metrics] --> Autoscaler[Cluster Autoscaler / Karpenter]
-        Autoscaler -.->|Provision/Terminate| NG1
-        Autoscaler -.->|Provision/Terminate| NG2
-        Autoscaler -.->|Provision/Terminate| NG3
-        NG1 -.-> Metrics
-        NG2 -.-> Metrics
-        NG3 -.-> Metrics
-    end
+    %% Client Layer
+    P_A[Project A] -->|Submit Job| API[API Gateway]
+    P_B[Project B] -->|Submit Job| API
+    
+    %% Core Management
+    API --> JobService[Job Submission Service]
+    JobService --> PriorityEngine[Priority Engine]
+    
+    %% Queuing & State
+    PriorityEngine -->|Ranked Jobs| Queue[(Priority Message Queue)]
+    ResourceDb[(Resource Registry DB)] <--> ResManager[Resource Manager]
+    
+    %% Orchestration
+    Queue --> Dispatcher[Dispatcher Service]
+    ResManager -->|Available Nodes| Dispatcher
+    
+    %% Compute Layer
+    Dispatcher -->|Assigns Heavy Task| CloudHigh[High-Performance Cloud]
+    Dispatcher -->|Assigns Cheap Task| CloudLow[Spot/Low-Cost Cloud]
+    Dispatcher -->|Assigns Fast Task| EdgeNodes[Edge Compute Nodes]
+    
+    %% Completion
+    CloudHigh --> Results[Result Aggregator]
+    CloudLow --> Results
+    EdgeNodes --> Results
+    Results -->|Update Status| ResManager
 ```
 
-## 3. Well-Architected Framework Analysis
+## 3. End-to-End System Flow
+1. **Job Submission:** A developer or automated system sends a request to the **API Gateway** to run a specific task (like processing data or training an AI model). 
+2. **Scoring and Prioritization:** The **Priority Engine** evaluates the request against business rules (e.g. "Project A is a live production issue," or "Project B is a weekly background report"). It assigns a priority score so the system knows what matters most.
+3. **Queuing:** The job enters a **Priority Message Queue**. High-priority jobs instantly skip to the front of the line, while lower-priority tasks wait their turn.
+4. **Resource Monitoring:** The **Resource Manager** continuously checks the **Resource Registry DB** to see which servers or edge devices are currently idle and healthy.
+5. **Dispatching:** The **Dispatcher Service** pulls the most important job from the queue. It matches the job's needs with available hardware—sending massive tasks to the cloud and quick, low-latency tasks to edge devices.
+6. **Completion:** Once the hardware finishes the job, it sends the output to the **Result Aggregator**. The system marks the hardware as "free" again, ready for the next task in the queue.
 
-### Operational Excellence
-* **Infrastructure as Code (IaC) & GitOps:** All resource quotas, project priorities, and queue configurations are maintained in version control systems and deployed via GitOps controllers (e.g., ArgoCD, Flux). This ensures auditable, repeatable, and easily reversible configuration changes.
-* **Comprehensive Observability:** Centralized logging and metrics (Prometheus/Grafana) track queue depths, wait times, eviction rates, and node utilization, allowing operators to proactively tune scheduler weights and debug bottlenecks.
+## 4. Well-Architected Framework Analysis
 
-### Security
-* **Tenant Isolation:** Each project is assigned a dedicated namespace with strict Role-Based Access Control (RBAC). Network policies isolate intra-project communication where necessary.
-* **Admission Control:** A Policy Engine (e.g., Open Policy Agent/Gatekeeper) intercepts job submissions to ensure they contain required metadata (e.g., cost-center tags) and do not exceed predefined project boundaries or request unauthorized privileged access.
+### 4.1 Operational Excellence
+- **Independent Updates:** Because the system is built with separate microservices, your team can upgrade the Priority Engine without taking the Dispatcher or the whole system offline. 
+- **Centralized Tracking:** Every job gets a unique ID tag. This makes it easy for support teams to trace exactly where a job is and quickly figure out why it might have failed.
 
-### Reliability
-* **High-Availability Control Plane:** The orchestration control plane is distributed across multiple Availability Zones to prevent single points of failure.
-* **Graceful Eviction and Checkpointing:** If higher-priority jobs preempt lower-priority ones, workloads are gracefully terminated. Where applicable, jobs utilize checkpointing to resume from the last saved state rather than restarting entirely.
+### 4.2 Security
+- **Strict Access Control:** The API Gateway verifies the identity of every incoming request. This prevents unauthorized applications from stealing expensive compute time.
+- **Isolated Workloads:** Jobs run in separate, secure containers on the servers. This ensures that sensitive data from one project cannot be seen or accidentally altered by another project's code.
 
-### Performance Efficiency
-* **Advanced Scheduling & Bin-packing:** The scheduler continuously evaluates pending queues, optimizing the placement of containers onto compute nodes (bin-packing) to minimize fragmented, unused CPU/Memory overhead.
-* **Just-In-Time Provisioning:** Node autoscalers (like Karpenter) bypass rigid autoscaling groups to directly provision right-sized compute instances based specifically on the pending pod's resource requests, reducing launch latency.
+### 4.3 Reliability
+- **Automated Retries:** If a cloud server crashes in the middle of a job, the Dispatcher instantly notices and puts the job back in the queue to be handled by a healthy server.
+- **Traffic Buffering:** If a sudden flood of 10,000 jobs arrives at once, the Message Queue safely holds them. This prevents the core system from getting overwhelmed and crashing.
 
-### Cost Optimization
-* **Resource Bursting & Quota Sharing:** Projects are guaranteed a baseline compute quota but can "burst" and borrow unused capacity from other idle projects, maximizing overall cluster utilization.
-* **Spot/Preemptible Compute Integration:** Low-priority, fault-tolerant workloads are automatically routed to Spot/preemptible instances, significantly reducing compute costs for non-time-sensitive batch processing.
-* **Scale-to-Zero:** The autoscaler aggressively scales down idle nodes to zero during periods of low demand to eliminate wasted spend.
-
-### Sustainability
-* **Maximized Hardware Utilization:** Efficient bin-packing algorithms ensure that active servers run at optimal utilization rates (e.g., 70-80%), reducing the aggregate energy consumption compared to running multiple under-utilized clusters.
-* **Dynamic Footprint:** By aggressively terminating idle instances and shifting flexible workloads to off-peak hours (time-shifting), the architecture minimizes its carbon footprint and hardware lifecycle impact.
-
-## 4. Technical Glossary
-
-* **Bin-packing:** An optimization algorithm used by schedulers to pack as many containers onto a single host as possible without causing resource exhaustion, minimizing wasted idle space.
-* **Cluster Autoscaler / Karpenter:** Tools that automatically adjust the size of a Kubernetes cluster by adding or removing compute nodes based on the resource requirements of pending jobs.
-* **GitOps:** A set of practices that uses Git repositories as the single source of truth to deliver infrastructure as code and applications.
-* **Kubernetes (K8s):** An open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications.
-* **Namespace:** A Kubernetes mechanism to partition resources into logically named groups, providing a scope for names and security policies.
-* **Open Policy Agent (OPA):** A general-purpose policy engine that unifies policy enforcement across the stack, often used to validate or mutate resource requests before they are scheduled.
-* **Preemptible / Spot Instances:** Unused compute capacity offered by cloud providers at a steep discount, with the caveat that they can be reclaimed (preempted) by the provider at any time with minimal warning.
-* **Queue / Batch Scheduler (e.g., Kueue, YuniKorn):** Extensions to standard orchestration platforms designed specifically to handle batch processing, managing job queues, relative priorities, fairness, and complex quota constraints.
-* **RBAC (Role-Based Access Control):** A method of restricting network or system access based on the roles of individual users within an enterprise.
+### 4.4 Performance Efficiency

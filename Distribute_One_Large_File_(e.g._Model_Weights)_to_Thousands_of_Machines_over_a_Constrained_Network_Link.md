@@ -1,7 +1,7 @@
 # Peer-to-Peer Large File Distribution Architecture
 
 ## 1. Architecture Overview
-When you need to send a massive file—like a 50GB artificial intelligence model—to thousands of machines over a slow or limited network connection, traditional methods fail. If every machine tries to download the file directly from the central server at the same time, the network link will instantly become clogged, causing the system to crash or take days to finish. 
+When you need to send a massive file (e.g. a 50GB artificial intelligence model), to thousands of machines over a slow or limited network connection, traditional methods fail. If every machine tries to download the file directly from the central server at the same time, the network link will instantly become clogged, causing the system to crash or take days to finish. 
 
 To solve this, we use a **Peer-to-Peer (P2P) distribution architecture** (similar to tools like BitTorrent or enterprise solutions like Dragonfly). Instead of every machine downloading the whole file from the source, one "Supernode" pulls the file across the slow link exactly once. It then chops the file into tiny pieces (chunks). The thousands of machines download different chunks and immediately start sharing those chunks with each other over their fast, local network. 
 

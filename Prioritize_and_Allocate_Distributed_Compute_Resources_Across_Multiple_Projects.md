@@ -42,7 +42,7 @@ flowchart TD
 2. **Scoring and Prioritization:** The **Priority Engine** evaluates the request against business rules (e.g. "Project A is a live production issue," or "Project B is a weekly background report"). It assigns a priority score so the system knows what matters most.
 3. **Queuing:** The job enters a **Priority Message Queue**. High-priority jobs instantly skip to the front of the line, while lower-priority tasks wait their turn.
 4. **Resource Monitoring:** The **Resource Manager** continuously checks the **Resource Registry DB** to see which servers or edge devices are currently idle and healthy.
-5. **Dispatching:** The **Dispatcher Service** pulls the most important job from the queue. It matches the job's needs with available hardware—sending massive tasks to the cloud and quick, low-latency tasks to edge devices.
+5. **Dispatching:** The **Dispatcher Service** pulls the most important job from the queue. It matches the job's needs with available hardware, sending massive tasks to the cloud and quick, low-latency tasks to edge devices.
 6. **Completion:** Once the hardware finishes the job, it sends the output to the **Result Aggregator**. The system marks the hardware as "free" again, ready for the next task in the queue.
 
 ## 4. Well-Architected Framework Analysis

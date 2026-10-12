@@ -2,7 +2,7 @@
 
 ## 1. Architecture Overview
 
-A Multi-Tenant Enterprise AI Platform is a centralized system that allows a company to securely offer artificial intelligence services—like custom chatbots, document analysis, or code generation—to multiple different business clients (tenants) at the same time. 
+A Multi-Tenant Enterprise AI Platform is a centralized system that allows a company to securely offer artificial intelligence services (like custom chatbots, document analysis, or code generation), to multiple different business clients (tenants) at the same time. 
 
 Instead of building a separate, expensive AI infrastructure for every single client, this architecture shares the heavy underlying hardware (like GPUs) across all clients. However, it enforces strict digital boundaries so that Client A can never see Client B's data, custom prompts, or private documents. 
 
